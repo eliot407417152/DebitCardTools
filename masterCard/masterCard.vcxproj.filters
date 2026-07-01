@@ -75,6 +75,9 @@
     <ClInclude Include="IsamKeyData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="OperationMode.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="MainWindow.h">

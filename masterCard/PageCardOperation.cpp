@@ -18,6 +18,7 @@
 #include <QMessageBox>
 #include <QDateTime>
 #include <QScrollArea>
+#include <QRadioButton>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ApduFields::buildApdu
@@ -89,16 +90,81 @@ QString CreateFileFields::buildApdu() const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// VerifyPinFields — computedP2 / buildApdu
+//   P2 = Pq 邏輯左移 3 位（例如輸入 02 → 10h）
+// ─────────────────────────────────────────────────────────────────────────────
+QString VerifyPinFields::computedP2() const
+{
+    QString raw = pq ? pq->text().trimmed().remove(' ').toUpper() : QString();
+    bool ok = false;
+    unsigned int val = raw.left(2).toUInt(&ok, 16);
+    if (!ok) val = 0;
+
+    unsigned int shifted = (val << 3) & 0xFF;   // 邏輯左移 3 位，取低 8 bits
+    return QString("%1").arg(shifted, 2, 16, QChar('0')).toUpper();
+}
+
+QString VerifyPinFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    QString claV = get(cla).leftJustified(2, '0').left(2);
+    QString insV = get(ins).leftJustified(2, '0').left(2);
+    QString p1V = get(p1).leftJustified(2, '0').left(2);
+    QString p2V = computedP2();
+
+    // DATA：PIN code，固定 8 bytes（16 HEX），不足補 FF
+    QString pinV = get(pin).leftJustified(16, 'F').left(16);
+    QString lcV = QString("%1").arg(pinV.length() / 2, 2, 16, QChar('0')).toUpper(); // 固定 08
+
+    if (p2Display) p2Display->setText(p2V);
+    if (lc)        lc->setText(lcV);
+
+    return claV + insV + p1V + p2V + lcV + pinV;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ReadBinaryFields::buildApdu（Read Binary / Read All Binary 共用）
+// ─────────────────────────────────────────────────────────────────────────────
+QString ReadBinaryFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    QString claV = get(cla).leftJustified(2, '0').left(2);
+    QString insV = get(ins).leftJustified(2, '0').left(2);
+    QString p1V = get(recN).leftJustified(2, '0').left(2);   // Record Id
+    QString p2V = get(p2).leftJustified(2, '0').left(2);     // 04 或 05（唯讀）
+
+    // Le：依欄位 maxLength 決定要補齊/截斷成幾個 HEX 字元
+    //   Read Binary     → 2 個 HEX 字元（預設 00）
+    //   Read All Binary → 6 個 HEX 字元（預設 00 00 00）
+    int leLen = (le && le->maxLength() > 0 && le->maxLength() <= 6) ? le->maxLength() : 2;
+    QString leV = get(le).leftJustified(leLen, '0').left(leLen);
+
+    return claV + insV + p1V + p2V + leV;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 建構子
 // ─────────────────────────────────────────────────────────────────────────────
-PageCardOperation::PageCardOperation(SCARDHANDLE isamHandle, SCARDHANDLE masterHandle, QWidget* parent)
-    : QWidget(parent), m_isamHandle(isamHandle), m_masterHandle(masterHandle)
+PageCardOperation::PageCardOperation(SCARDHANDLE isamHandle, SCARDHANDLE masterHandle,
+    OperationMode mode, QWidget* parent)
+    : QWidget(parent), m_isamHandle(isamHandle), m_masterHandle(masterHandle), m_mode(mode)
 {
     setupUI();
     if (m_isamHandle == 0)
         log("提示: 未分配 ISAM 連線控制代碼 (Handle=0)", true);
     else
         log("✔ ISAM 通訊端已對接。");
+
+    if (m_mode == OperationMode::GeneralOperation)
+        log("目前為「一般操作」模式：僅單一讀卡機通道，不提供母卡製作功能。");
+    else
+        log("目前為「母卡製作」模式：雙讀卡機通道已就緒。");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,6 +181,14 @@ void PageCardOperation::setupUI()
         "font-weight:bold; border-radius:4px; }");
     connect(backBtn, &QPushButton::clicked, this, &PageCardOperation::backRequested);
     btnRow->addWidget(backBtn);
+
+    QString modeText = (m_mode == OperationMode::MasterCardProduction)
+        ? "🔮 模式：母卡製作"
+        : "🛠 模式：一般操作（無母卡製作功能）";
+    auto* modeLbl = new QLabel(modeText, this);
+    modeLbl->setStyleSheet("font-weight:bold; color:#555; padding-left:12px;");
+    btnRow->addWidget(modeLbl);
+
     btnRow->addStretch();
     mainLayout->addLayout(btnRow);
 
@@ -132,6 +206,14 @@ void PageCardOperation::setupUI()
     tabWidget->addTab(isamTab, "🔑 ISAM 金鑰");
     tabWidget->addTab(lodTab, "💳 LOD / 母卡");
     tabWidget->addTab(apduTab, "📡 卡片指令");
+
+    // 一般操作模式：不提供製作母卡功能
+    if (m_mode == OperationMode::GeneralOperation) {
+        tabWidget->setTabEnabled(1, false);
+        tabWidget->setTabToolTip(1, "一般操作模式不提供母卡製作功能，請切換至母卡製作模式使用。");
+        if (m_makeMasterBtn) m_makeMasterBtn->setEnabled(false);
+        if (m_authBtn)       m_authBtn->setEnabled(false);
+    }
 
     bodyRow->addWidget(tabWidget, 3);
 
@@ -257,7 +339,7 @@ void PageCardOperation::setupLodTab(QWidget* tab)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 3 — 卡片指令（Create / Select / Write / List）
+// Tab 3 — 卡片指令（Create / Select / Write / List / Verify Pin / Read Binary / Read All Binary）
 // ─────────────────────────────────────────────────────────────────────────────
 void PageCardOperation::setupApduTab(QWidget* tab)
 {
@@ -272,8 +354,14 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     auto* targetGrp = new QGroupBox("目標讀卡機");
     auto* targetForm = new QFormLayout(targetGrp);
     auto* m_targetCombo = new QComboBox(content);
-    m_targetCombo->addItem("母卡 (Master Card)", 0);
-    m_targetCombo->addItem("ISAM 卡", 1);
+    if (m_mode == OperationMode::MasterCardProduction) {
+        m_targetCombo->addItem("母卡 (Master Card)", 0);
+        m_targetCombo->addItem("ISAM 卡", 1);
+    }
+    else {
+        // 一般操作模式：僅有單一讀卡機通道（掛在 ISAM handle 上）
+        m_targetCombo->addItem("讀卡機（單一通道）", 1);
+    }
     targetForm->addRow("發送對象：", m_targetCombo);
     layout->addWidget(targetGrp);
 
@@ -289,13 +377,37 @@ void PageCardOperation::setupApduTab(QWidget* tab)
         /*hasLe=*/false,
         m_selectFields);
 
+    // Lc 預設 02
+    if (m_selectFields.lc) m_selectFields.lc->setText("02");
+
+    // Select EF (P1=02) / Select DF (P1=01) 切換
+    auto* selModeRow = new QHBoxLayout();
+    auto* selEfRadio = new QRadioButton("Select EF（P1=02）", content);
+    auto* selDfRadio = new QRadioButton("Select DF（P1=01）", content);
+    selEfRadio->setChecked(true);
+    selModeRow->addWidget(selEfRadio);
+    selModeRow->addWidget(selDfRadio);
+    selModeRow->addStretch();
+
     auto* selectBtn = new QPushButton("▶ 執行 Select File", content);
     selectBtn->setStyleSheet(
         "QPushButton { background:#00897B; color:white; padding:8px; "
         "font-weight:bold; border-radius:4px; }");
     auto* selectLayout = qobject_cast<QVBoxLayout*>(selectGrp->layout());
-    if (selectLayout) selectLayout->addWidget(selectBtn);
+    if (selectLayout) {
+        selectLayout->addLayout(selModeRow);
+        selectLayout->addWidget(selectBtn);
+    }
     layout->addWidget(selectGrp);
+
+    connect(selEfRadio, &QRadioButton::toggled, this, [this, selEfRadio]() {
+        if (selEfRadio->isChecked() && m_selectFields.p1)
+            m_selectFields.p1->setText("02");
+        });
+    connect(selDfRadio, &QRadioButton::toggled, this, [this, selDfRadio]() {
+        if (selDfRadio->isChecked() && m_selectFields.p1)
+            m_selectFields.p1->setText("01");
+        });
 
     // ── Write Record ──
     auto* writeGrp = makeApduGroup(
@@ -331,6 +443,156 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     listLay->addWidget(listBtn);
     layout->addWidget(listGrp);
 
+    // ── Verify Pin ──
+    auto* verifyGrp = new QGroupBox("⑤ Verify Pin", content);
+    auto* verifyLay = new QVBoxLayout(verifyGrp);
+
+    auto* verifyRow = new QHBoxLayout();
+    auto addVerifyCol = [&](QLineEdit*& outField, const QString& lbl,
+        const QString& def, int maxLen, bool ro) {
+            auto* col = new QVBoxLayout();
+            auto* l = new QLabel(lbl, verifyGrp);
+            l->setAlignment(Qt::AlignCenter);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeHexField(verifyGrp, maxLen);
+            outField->setText(def);
+            outField->setReadOnly(ro);
+            if (ro) {
+                outField->setStyleSheet(
+                    "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+                    "font-weight:bold; font-size:12px; padding:4px; "
+                    "border:1px dashed #AAA; border-radius:3px; }");
+            }
+            col->addWidget(l);
+            col->addWidget(outField);
+            verifyRow->addLayout(col);
+        };
+
+    addVerifyCol(m_verifyPinFields.cla, "CLA", "00", 2, false);
+    addVerifyCol(m_verifyPinFields.ins, "INS", "20", 2, false);
+    addVerifyCol(m_verifyPinFields.p1, "P1", "00", 2, false);
+    addVerifyCol(m_verifyPinFields.pq, "Pq（原始值）", "", 2, false);
+    addVerifyCol(m_verifyPinFields.p2Display, "P2（Pq<<3）", "00", 2, true);
+    addVerifyCol(m_verifyPinFields.lc, "Lc", "08", 2, true);
+    verifyRow->addStretch();
+    verifyLay->addLayout(verifyRow);
+
+    auto* pinLabel = new QLabel("DATA — PIN code（8 bytes / 16 HEX）：", verifyGrp);
+    pinLabel->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_verifyPinFields.pin = makeEditField(verifyGrp, false);
+    m_verifyPinFields.pin->setPlaceholderText("輸入 PIN（HEX，不足自動補 FF）");
+    verifyLay->addWidget(pinLabel);
+    verifyLay->addWidget(m_verifyPinFields.pin);
+
+    auto* verifyHint = new QLabel(
+        "P2 由 Pq 邏輯左移 3 位自動運算（例如輸入 02 → P2=10）", verifyGrp);
+    verifyHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    verifyLay->addWidget(verifyHint);
+
+    auto* verifyBtn = new QPushButton("▶ 執行 Verify Pin", verifyGrp);
+    verifyBtn->setStyleSheet(
+        "QPushButton { background:#C62828; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    verifyLay->addWidget(verifyBtn);
+    layout->addWidget(verifyGrp);
+
+    connect(m_verifyPinFields.pq, &QLineEdit::textChanged,
+        this, &PageCardOperation::onUpdateVerifyPinP2);
+    connect(verifyBtn, &QPushButton::clicked, this, &PageCardOperation::onVerifyPin);
+    onUpdateVerifyPinP2();   // 初始化顯示
+
+    // ── Read Binary ──
+    auto* readGrp = new QGroupBox("⑥ Read Binary", content);
+    auto* readLay = new QVBoxLayout(readGrp);
+
+    auto* readRow = new QHBoxLayout();
+    auto addReadCol = [&](QLineEdit*& outField, const QString& lbl,
+        const QString& def, int maxLen, bool ro) {
+            auto* col = new QVBoxLayout();
+            auto* l = new QLabel(lbl, readGrp);
+            l->setAlignment(Qt::AlignCenter);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeHexField(readGrp, maxLen);
+            outField->setText(def);
+            outField->setReadOnly(ro);
+            if (ro) {
+                outField->setStyleSheet(
+                    "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+                    "font-weight:bold; font-size:12px; padding:4px; "
+                    "border:1px dashed #AAA; border-radius:3px; }");
+            }
+            col->addWidget(l);
+            col->addWidget(outField);
+            readRow->addLayout(col);
+        };
+
+    addReadCol(m_readBinaryFields.cla, "CLA", "00", 2, false);
+    addReadCol(m_readBinaryFields.ins, "INS", "B2", 2, false);
+    addReadCol(m_readBinaryFields.recN, "P1（RecN）", "", 2, false);
+    addReadCol(m_readBinaryFields.p2, "P2", "04", 2, true);
+    addReadCol(m_readBinaryFields.le, "Le", "00", 2, false);
+    readRow->addStretch();
+    readLay->addLayout(readRow);
+
+    auto* readHint = new QLabel("P1 = Record Id（自行輸入），Le 預設 00", readGrp);
+    readHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    readLay->addWidget(readHint);
+
+    auto* readBtn = new QPushButton("▶ 執行 Read Binary", readGrp);
+    readBtn->setStyleSheet(
+        "QPushButton { background:#1565C0; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    readLay->addWidget(readBtn);
+    layout->addWidget(readGrp);
+
+    connect(readBtn, &QPushButton::clicked, this, &PageCardOperation::onReadBinary);
+
+    // ── Read All Binary ──
+    auto* readAllGrp = new QGroupBox("⑦ Read All Binary", content);
+    auto* readAllLay = new QVBoxLayout(readAllGrp);
+
+    auto* readAllRow = new QHBoxLayout();
+    auto addReadAllCol = [&](QLineEdit*& outField, const QString& lbl,
+        const QString& def, int maxLen, bool ro) {
+            auto* col = new QVBoxLayout();
+            auto* l = new QLabel(lbl, readAllGrp);
+            l->setAlignment(Qt::AlignCenter);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeHexField(readAllGrp, maxLen);
+            outField->setText(def);
+            outField->setReadOnly(ro);
+            if (ro) {
+                outField->setStyleSheet(
+                    "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+                    "font-weight:bold; font-size:12px; padding:4px; "
+                    "border:1px dashed #AAA; border-radius:3px; }");
+            }
+            col->addWidget(l);
+            col->addWidget(outField);
+            readAllRow->addLayout(col);
+        };
+
+    addReadAllCol(m_readAllBinaryFields.cla, "CLA", "00", 2, false);
+    addReadAllCol(m_readAllBinaryFields.ins, "INS", "B2", 2, false);
+    addReadAllCol(m_readAllBinaryFields.recN, "P1（RecN）", "", 2, false);
+    addReadAllCol(m_readAllBinaryFields.p2, "P2", "05", 2, true);
+    addReadAllCol(m_readAllBinaryFields.le, "Le", "000000", 6, false);
+    readAllRow->addStretch();
+    readAllLay->addLayout(readAllRow);
+
+    auto* readAllHint = new QLabel("P1 = Record Id（自行輸入），Le 預設 00 00 00", readAllGrp);
+    readAllHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    readAllLay->addWidget(readAllHint);
+
+    auto* readAllBtn = new QPushButton("▶ 執行 Read All Binary", readAllGrp);
+    readAllBtn->setStyleSheet(
+        "QPushButton { background:#00838F; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    readAllLay->addWidget(readAllBtn);
+    layout->addWidget(readAllGrp);
+
+    connect(readAllBtn, &QPushButton::clicked, this, &PageCardOperation::onReadAllBinary);
+
     layout->addStretch();
     scroll->setWidget(content);
 
@@ -349,6 +611,8 @@ void PageCardOperation::setupApduTab(QWidget* tab)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // setupCreateFileGroup — Create File 含子欄位的詳細版本
+//   CLA/INS/P1/P2/Lc 維持固定預設值；16 bytes DataIn 子欄位改為自行輸入
+//   （原本的建議值僅以 placeholder 顯示，不再預先帶入）
 // ─────────────────────────────────────────────────────────────────────────────
 void PageCardOperation::setupCreateFileGroup(QWidget* parent, QVBoxLayout* layout)
 {
@@ -384,6 +648,7 @@ void PageCardOperation::setupCreateFileGroup(QWidget* parent, QVBoxLayout* layou
             hdrRow->addLayout(col);
         };
 
+    // Create File 預設固定：CLA:00 INS:E0 P1:00 P2:00 Lc:10（其他 DataIn 子欄位自行輸入）
     makeHdrCol(m_createFields.cla, "CLA", "00", 2, false);
     makeHdrCol(m_createFields.ins, "INS", "E0", 2, false);
     makeHdrCol(m_createFields.p1, "P1", "00", 2, false);
@@ -393,7 +658,7 @@ void PageCardOperation::setupCreateFileGroup(QWidget* parent, QVBoxLayout* layou
     grpLay->addLayout(hdrRow);
 
     // ── DataIn 子欄位（格線 4 欄）───────────────────────────────────────────
-    auto* dataGrp = new QGroupBox("DataIn — 16 bytes", grp);
+    auto* dataGrp = new QGroupBox("DataIn — 16 bytes（請自行輸入，以下僅為提示值）", grp);
     auto* dataGrid = new QGridLayout(dataGrp);
     dataGrid->setHorizontalSpacing(14);
     dataGrid->setVerticalSpacing(8);
@@ -422,6 +687,7 @@ void PageCardOperation::setupCreateFileGroup(QWidget* parent, QVBoxLayout* layou
         "檔案空間  2B", "檔案類型  1B", "資料錄長度 1B", "錯誤限制  1B",
         "基碼認證  1B", "基碼類別  1B", "保留系統  1B"
     };
+    // 提示值（僅作為 placeholder，不再自動帶入實際內容）
     const char* fieldDefs[] = {
         "00C0", "0040", "0500", "0400",
         "001C", "90",   "18",   "02",
@@ -448,7 +714,8 @@ void PageCardOperation::setupCreateFileGroup(QWidget* parent, QVBoxLayout* layou
         f->setMaxLength(fieldMaxLen[i]);
         f->setFixedWidth(fieldMaxLen[i] <= 2 ? 52 : 80);
         f->setAlignment(Qt::AlignCenter);
-        f->setText(QString::fromLatin1(fieldDefs[i]));
+        // 不再預先帶入內容，改以 placeholder 顯示建議值，需使用者自行輸入
+        f->setPlaceholderText(QString::fromLatin1(fieldDefs[i]));
         f->setStyleSheet(
             "QLineEdit { background:#F9F9F9; color:#000; font-family:'Courier New'; "
             "font-weight:bold; font-size:12px; padding:4px; "
@@ -683,13 +950,19 @@ void PageCardOperation::onLoadFile()
     m_fileLabel->setText("✔ " + path.section('/', -1));
     m_fileLabel->setStyleSheet("color:#2E7D32; font-weight:bold;");
     displayData(m_data);
-    m_makeMasterBtn->setEnabled(true);
+    if (m_mode == OperationMode::MasterCardProduction)
+        m_makeMasterBtn->setEnabled(true);
     log("✔ LOD 載入：" + m_data.name);
     for (const auto& w : warnings) log("⚠️ " + w, true);
 }
 
 void PageCardOperation::onAuthenticate()
 {
+    if (m_mode == OperationMode::GeneralOperation) {
+        log("一般操作模式不提供母卡認證功能。", true);
+        return;
+    }
+
     log("====== 🔐 母卡認證 ======");
     MasterCardUpdater mc(m_masterHandle, m_isamHandle);
     bool ok = mc.authenticate([this](const QString& msg, bool err) { log(msg, err); });
@@ -714,6 +987,11 @@ void PageCardOperation::onAuthenticate()
 
 void PageCardOperation::onMakeMaster()
 {
+    if (m_mode == OperationMode::GeneralOperation) {
+        log("一般操作模式不提供製作母卡功能。", true);
+        return;
+    }
+
     CustomerData d = collectDataFromFields();
     if (d.c3.isEmpty() || d.c1.isEmpty()) {
         QMessageBox::warning(this, "資料不足", "至少需要填入 C3 / C1 金鑰！");
@@ -856,6 +1134,91 @@ void PageCardOperation::onListFile()
             .arg(tofDesc(tof)));
     }
     log(QString("  共 %1 個檔案").arg(fileCount));
+}
+
+void PageCardOperation::onUpdateVerifyPinP2()
+{
+    if (m_verifyPinFields.p2Display)
+        m_verifyPinFields.p2Display->setText(m_verifyPinFields.computedP2());
+}
+
+void PageCardOperation::onVerifyPin()
+{
+    QString apdu = m_verifyPinFields.buildApdu();   // 呼叫後 p2Display / lc 會同步更新
+    if (apdu.length() < 8) {
+        log("[Verify Pin] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Verify Pin ======");
+    log(QString("Pq 邏輯左移 3 位 → P2 = %1")
+        .arg(m_verifyPinFields.p2Display ? m_verifyPinFields.p2Display->text() : QString()));
+
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Verify Pin] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    if (sw == "9000") {
+        log("✔ Verify Pin 成功 SW=9000");
+    }
+    else if (sw.left(2) == "63") {
+        log(QString("⚠️ Verify Pin 未通過（SW=%1，63Cx 代表剩餘可嘗試次數）").arg(sw), true);
+    }
+    else {
+        log("⚠️ Verify Pin SW=" + sw, true);
+    }
+}
+
+void PageCardOperation::onReadBinary()
+{
+    QString apdu = m_readBinaryFields.buildApdu();
+    if (apdu.length() < 10) {
+        log("[Read Binary] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Read Binary ======");
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Read Binary] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    QString data = resp.left(resp.length() - 4);
+    if (sw == "9000") {
+        log("✔ Read Binary 成功 SW=9000");
+        log("Data: " + (data.isEmpty() ? QString("(空)") : data));
+    }
+    else {
+        log("⚠️ Read Binary SW=" + sw, true);
+    }
+}
+
+void PageCardOperation::onReadAllBinary()
+{
+    QString apdu = m_readAllBinaryFields.buildApdu();
+    if (apdu.length() < 10) {
+        log("[Read All Binary] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Read All Binary ======");
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Read All Binary] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    QString data = resp.left(resp.length() - 4);
+    if (sw == "9000") {
+        log("✔ Read All Binary 成功 SW=9000");
+        log("Data: " + (data.isEmpty() ? QString("(空)") : data));
+    }
+    else {
+        log("⚠️ Read All Binary SW=" + sw, true);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

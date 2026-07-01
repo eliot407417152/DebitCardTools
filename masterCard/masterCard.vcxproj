@@ -115,6 +115,7 @@
     <ClInclude Include="IsamKeyUpdater.h" />
     <ClInclude Include="LodLoader.h" />
     <ClInclude Include="MasterCardUpdater.h" />
+    <ClInclude Include="OperationMode.h" />
     <QtMoc Include="PageSelectReader.h" />
     <QtMoc Include="PageCardOperation.h" />
     <QtMoc Include="MainWindow.h" />

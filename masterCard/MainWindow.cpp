@@ -23,6 +23,7 @@ void MainWindow::onReaderSelected()
     auto* opPage = new PageCardOperation(
         m_selectReaderPage->isamHandle(),
         m_selectReaderPage->masterHandle(),
+        m_selectReaderPage->mode(),
         this);
 
     connect(opPage, &PageCardOperation::backRequested, [this, opPage]() {

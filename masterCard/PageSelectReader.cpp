@@ -9,6 +9,9 @@
 #include <QFormLayout>
 #include <QMessageBox>
 #include <QDateTime>
+#include <QRadioButton>
+#include <QButtonGroup>
+#include <QDebug>
 
 PageSelectReader::PageSelectReader(QWidget* parent)
     : QWidget(parent)
@@ -28,8 +31,9 @@ PageSelectReader::~PageSelectReader()
     if (m_context)      SCardReleaseContext(m_context);
 }
 
-SCARDHANDLE PageSelectReader::isamHandle()   const { return m_isamHandle; }
-SCARDHANDLE PageSelectReader::masterHandle() const { return m_masterHandle; }
+SCARDHANDLE   PageSelectReader::isamHandle()   const { return m_isamHandle; }
+SCARDHANDLE   PageSelectReader::masterHandle() const { return m_masterHandle; }
+OperationMode PageSelectReader::mode()         const { return m_mode; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UI
@@ -38,16 +42,33 @@ void PageSelectReader::setupUI()
 {
     auto* mainLayout = new QVBoxLayout(this);
 
+    // ── 操作模式選擇 ──────────────────────────────────────────────────────
+    auto* modeGrp = new QGroupBox("操作模式");
+    auto* modeLay = new QHBoxLayout(modeGrp);
+    m_modeMasterRadio = new QRadioButton("🔮 母卡製作（需要 2 台讀卡機）", this);
+    m_modeGeneralRadio = new QRadioButton("🛠 一般操作", this);
+    m_modeMasterRadio->setChecked(true);
+
+    m_modeGroup = new QButtonGroup(this);
+    m_modeGroup->addButton(m_modeMasterRadio);
+    m_modeGroup->addButton(m_modeGeneralRadio);
+
+    modeLay->addWidget(m_modeMasterRadio);
+    modeLay->addWidget(m_modeGeneralRadio);
+    mainLayout->addWidget(modeGrp);
+
     m_statusLabel = new QLabel("正在偵測讀卡機...", this);
     m_statusLabel->setStyleSheet("font-size: 14px; font-weight: bold;");
     mainLayout->addWidget(m_statusLabel);
 
     auto* grp = new QGroupBox("讀卡機功能指派");
-    auto* form = new QFormLayout(grp);
+    m_readerForm = new QFormLayout(grp);
     m_isamCombo = new QComboBox(this);
     m_cardCombo = new QComboBox(this);
-    form->addRow("🔑 ISAM 讀卡機：", m_isamCombo);
-    form->addRow("💳 母卡 讀卡機：", m_cardCombo);
+    m_readerForm->addRow("🔑 ISAM 讀卡機：", m_isamCombo);
+    m_readerForm->addRow("💳 母卡 讀卡機：", m_cardCombo);
+    m_isamRowLabel = qobject_cast<QLabel*>(m_readerForm->labelForField(m_isamCombo));
+    m_cardRowLabel = qobject_cast<QLabel*>(m_readerForm->labelForField(m_cardCombo));
     mainLayout->addWidget(grp);
 
     auto* btnRow = new QHBoxLayout();
@@ -70,6 +91,38 @@ void PageSelectReader::setupUI()
 
     connect(m_refreshBtn, &QPushButton::clicked, this, &PageSelectReader::onRefresh);
     connect(m_confirmBtn, &QPushButton::clicked, this, &PageSelectReader::onConfirm);
+    connect(m_modeMasterRadio, &QRadioButton::toggled, this, &PageSelectReader::onModeChanged);
+
+    applyModeUI();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 模式切換
+// ─────────────────────────────────────────────────────────────────────────────
+void PageSelectReader::onModeChanged()
+{
+    m_mode = m_modeMasterRadio->isChecked()
+        ? OperationMode::MasterCardProduction
+        : OperationMode::GeneralOperation;
+
+    applyModeUI();
+
+    log(m_mode == OperationMode::MasterCardProduction
+        ? "已切換為「母卡製作」模式（需要 2 台讀卡機）。"
+        : "已切換為「一般操作」模式（僅需 1 台讀卡機，不含製作母卡功能）。");
+
+    onRefresh();
+}
+
+void PageSelectReader::applyModeUI()
+{
+    bool isMaster = (m_mode == OperationMode::MasterCardProduction);
+
+    if (m_cardCombo)    m_cardCombo->setVisible(isMaster);
+    if (m_cardRowLabel) m_cardRowLabel->setVisible(isMaster);
+
+    if (m_isamRowLabel)
+        m_isamRowLabel->setText(isMaster ? "🔑 ISAM 讀卡機：" : "🔑 讀卡機：");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -107,11 +160,14 @@ void PageSelectReader::onRefresh()
     m_cardCombo->addItems(readers);
     if (readers.size() > 1) m_cardCombo->setCurrentIndex(1);
 
-    if (readers.size() < 2) {
-        m_statusLabel->setText(QString("⚠ 偵測到 %1 台讀卡機（需要至少 2 台）").arg(readers.size()));
+    const int required = (m_mode == OperationMode::MasterCardProduction) ? 2 : 1;
+
+    if (readers.size() < required) {
+        m_statusLabel->setText(QString("⚠ 偵測到 %1 台讀卡機（此模式需要至少 %2 台）")
+            .arg(readers.size()).arg(required));
         m_statusLabel->setStyleSheet("color:#E65100; font-weight:bold;");
         m_confirmBtn->setEnabled(false);
-        log("硬體不足：請插入至少兩台讀卡機。", true);
+        log(QString("硬體不足：請插入至少 %1 台讀卡機。").arg(required), true);
     }
     else {
         m_statusLabel->setText(QString("✔ 偵測到 %1 台讀卡機").arg(readers.size()));
@@ -127,31 +183,47 @@ void PageSelectReader::onRefresh()
 void PageSelectReader::onConfirm()
 {
     QString isamReader = m_isamCombo->currentText();
-    QString cardReader = m_cardCombo->currentText();
 
-    if (isamReader == cardReader) {
-        QMessageBox::warning(this, "設定錯誤", "ISAM 與母卡不可指派同一台讀卡機！");
-        return;
+    if (m_mode == OperationMode::MasterCardProduction) {
+        QString cardReader = m_cardCombo->currentText();
+
+        if (isamReader == cardReader) {
+            QMessageBox::warning(this, "設定錯誤", "ISAM 與母卡不可指派同一台讀卡機！");
+            return;
+        }
+
+        if (m_isamHandle) { SCardDisconnect(m_isamHandle, SCARD_LEAVE_CARD);   m_isamHandle = 0; }
+        if (m_masterHandle) { SCardDisconnect(m_masterHandle, SCARD_LEAVE_CARD); m_masterHandle = 0; }
+
+        log("測試 ISAM 卡片連線...");
+        if (!connectCard(isamReader, m_isamHandle)) {
+            QMessageBox::critical(this, "連線失敗", "無法連線 ISAM 讀卡機，請確認卡片已插好。");
+            return;
+        }
+        log("✔ ISAM 連線成功。");
+
+        log("測試母卡連線...");
+        if (!connectCard(cardReader, m_masterHandle)) {
+            SCardDisconnect(m_isamHandle, SCARD_LEAVE_CARD); m_isamHandle = 0;
+            QMessageBox::critical(this, "連線失敗", "無法連線母卡讀卡機，請確認卡片已插好。");
+            return;
+        }
+        log("✔ 母卡連線成功。");
+        log("🎉 雙通道就緒（母卡製作模式），切換操作頁面...");
     }
+    else {
+        // 一般操作：僅需一台讀卡機，掛在 ISAM 通道；母卡通道維持 0
+        if (m_isamHandle) { SCardDisconnect(m_isamHandle, SCARD_LEAVE_CARD);   m_isamHandle = 0; }
+        if (m_masterHandle) { SCardDisconnect(m_masterHandle, SCARD_LEAVE_CARD); m_masterHandle = 0; }
 
-    if (m_isamHandle) { SCardDisconnect(m_isamHandle, SCARD_LEAVE_CARD); m_isamHandle = 0; }
-    if (m_masterHandle) { SCardDisconnect(m_masterHandle, SCARD_LEAVE_CARD); m_masterHandle = 0; }
-
-    log("測試 ISAM 卡片連線...");
-    if (!connectCard(isamReader, m_isamHandle)) {
-        QMessageBox::critical(this, "連線失敗", "無法連線 ISAM 讀卡機，請確認卡片已插好。");
-        return;
+        log("測試讀卡機連線...");
+        if (!connectCard(isamReader, m_isamHandle)) {
+            QMessageBox::critical(this, "連線失敗", "無法連線讀卡機，請確認卡片已插好。");
+            return;
+        }
+        log("✔ 讀卡機連線成功（一般操作模式，僅單一通道）。");
+        log("🎉 就緒，切換操作頁面...");
     }
-    log("✔ ISAM 連線成功。");
-
-    log("測試母卡連線...");
-    if (!connectCard(cardReader, m_masterHandle)) {
-        SCardDisconnect(m_isamHandle, SCARD_LEAVE_CARD); m_isamHandle = 0;
-        QMessageBox::critical(this, "連線失敗", "無法連線母卡讀卡機，請確認卡片已插好。");
-        return;
-    }
-    log("✔ 母卡連線成功。");
-    log("🎉 雙通道就緒，切換操作頁面...");
 
     emit readerSelected();
 }
