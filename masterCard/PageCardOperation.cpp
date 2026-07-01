@@ -126,9 +126,9 @@ QString VerifyPinFields::buildApdu() const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ReadBinaryFields::buildApdu（Read Binary / Read All Binary 共用）
+// ReadRecordFields::buildApdu（Read Record / Read All Record 共用）
 // ─────────────────────────────────────────────────────────────────────────────
-QString ReadBinaryFields::buildApdu() const
+QString ReadRecordFields::buildApdu() const
 {
     auto get = [](QLineEdit* f) {
         return f ? f->text().trimmed().remove(' ').toUpper() : QString();
@@ -140,8 +140,8 @@ QString ReadBinaryFields::buildApdu() const
     QString p2V = get(p2).leftJustified(2, '0').left(2);     // 04 或 05（唯讀）
 
     // Le：依欄位 maxLength 決定要補齊/截斷成幾個 HEX 字元
-    //   Read Binary     → 2 個 HEX 字元（預設 00）
-    //   Read All Binary → 6 個 HEX 字元（預設 00 00 00）
+    //   Read Record     → 2 個 HEX 字元（預設 00）
+    //   Read All Record → 6 個 HEX 字元（預設 00 00 00）
     int leLen = (le && le->maxLength() > 0 && le->maxLength() <= 6) ? le->maxLength() : 2;
     QString leV = get(le).leftJustified(leLen, '0').left(leLen);
 
@@ -339,7 +339,7 @@ void PageCardOperation::setupLodTab(QWidget* tab)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 3 — 卡片指令（Create / Select / Write / List / Verify Pin / Read Binary / Read All Binary）
+// Tab 3 — 卡片指令（Create / Select / Write / List / Verify Pin / Read Record / Read All Record）
 // ─────────────────────────────────────────────────────────────────────────────
 void PageCardOperation::setupApduTab(QWidget* tab)
 {
@@ -501,8 +501,8 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     connect(verifyBtn, &QPushButton::clicked, this, &PageCardOperation::onVerifyPin);
     onUpdateVerifyPinP2();   // 初始化顯示
 
-    // ── Read Binary ──
-    auto* readGrp = new QGroupBox("⑥ Read Binary", content);
+    // ── Read Record ──
+    auto* readGrp = new QGroupBox("⑥ Read Record", content);
     auto* readLay = new QVBoxLayout(readGrp);
 
     auto* readRow = new QHBoxLayout();
@@ -526,11 +526,11 @@ void PageCardOperation::setupApduTab(QWidget* tab)
             readRow->addLayout(col);
         };
 
-    addReadCol(m_readBinaryFields.cla, "CLA", "00", 2, false);
-    addReadCol(m_readBinaryFields.ins, "INS", "B2", 2, false);
-    addReadCol(m_readBinaryFields.recN, "P1（RecN）", "", 2, false);
-    addReadCol(m_readBinaryFields.p2, "P2", "04", 2, true);
-    addReadCol(m_readBinaryFields.le, "Le", "00", 2, false);
+    addReadCol(m_readRecordFields.cla, "CLA", "00", 2, false);
+    addReadCol(m_readRecordFields.ins, "INS", "B2", 2, false);
+    addReadCol(m_readRecordFields.recN, "P1（RecN）", "", 2, false);
+    addReadCol(m_readRecordFields.p2, "P2", "04", 2, true);
+    addReadCol(m_readRecordFields.le, "Le", "00", 2, false);
     readRow->addStretch();
     readLay->addLayout(readRow);
 
@@ -538,17 +538,17 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     readHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
     readLay->addWidget(readHint);
 
-    auto* readBtn = new QPushButton("▶ 執行 Read Binary", readGrp);
+    auto* readBtn = new QPushButton("▶ 執行 Read Record", readGrp);
     readBtn->setStyleSheet(
         "QPushButton { background:#1565C0; color:white; padding:8px; "
         "font-weight:bold; border-radius:4px; }");
     readLay->addWidget(readBtn);
     layout->addWidget(readGrp);
 
-    connect(readBtn, &QPushButton::clicked, this, &PageCardOperation::onReadBinary);
+    connect(readBtn, &QPushButton::clicked, this, &PageCardOperation::onReadRecord);
 
-    // ── Read All Binary ──
-    auto* readAllGrp = new QGroupBox("⑦ Read All Binary", content);
+    // ── Read All REcord ──
+    auto* readAllGrp = new QGroupBox("⑦ Read All Record", content);
     auto* readAllLay = new QVBoxLayout(readAllGrp);
 
     auto* readAllRow = new QHBoxLayout();
@@ -572,11 +572,11 @@ void PageCardOperation::setupApduTab(QWidget* tab)
             readAllRow->addLayout(col);
         };
 
-    addReadAllCol(m_readAllBinaryFields.cla, "CLA", "00", 2, false);
-    addReadAllCol(m_readAllBinaryFields.ins, "INS", "B2", 2, false);
-    addReadAllCol(m_readAllBinaryFields.recN, "P1（RecN）", "", 2, false);
-    addReadAllCol(m_readAllBinaryFields.p2, "P2", "05", 2, true);
-    addReadAllCol(m_readAllBinaryFields.le, "Le", "000000", 6, false);
+    addReadAllCol(m_readAllRecordFields.cla, "CLA", "00", 2, false);
+    addReadAllCol(m_readAllRecordFields.ins, "INS", "B2", 2, false);
+    addReadAllCol(m_readAllRecordFields.recN, "P1（RecN）", "", 2, false);
+    addReadAllCol(m_readAllRecordFields.p2, "P2", "05", 2, true);
+    addReadAllCol(m_readAllRecordFields.le, "Le", "000000", 6, false);
     readAllRow->addStretch();
     readAllLay->addLayout(readAllRow);
 
@@ -584,14 +584,14 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     readAllHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
     readAllLay->addWidget(readAllHint);
 
-    auto* readAllBtn = new QPushButton("▶ 執行 Read All Binary", readAllGrp);
+    auto* readAllBtn = new QPushButton("▶ 執行 Read All Record", readAllGrp);
     readAllBtn->setStyleSheet(
         "QPushButton { background:#00838F; color:white; padding:8px; "
         "font-weight:bold; border-radius:4px; }");
     readAllLay->addWidget(readAllBtn);
     layout->addWidget(readAllGrp);
 
-    connect(readAllBtn, &QPushButton::clicked, this, &PageCardOperation::onReadAllBinary);
+    connect(readAllBtn, &QPushButton::clicked, this, &PageCardOperation::onReadAllRecord);
 
     layout->addStretch();
     scroll->setWidget(content);
@@ -1171,53 +1171,53 @@ void PageCardOperation::onVerifyPin()
     }
 }
 
-void PageCardOperation::onReadBinary()
+void PageCardOperation::onReadRecord()
 {
-    QString apdu = m_readBinaryFields.buildApdu();
+    QString apdu = m_readRecordFields.buildApdu();
     if (apdu.length() < 10) {
-        log("[Read Binary] APDU 不完整，請確認欄位", true);
+        log("[Read Record] APDU 不完整，請確認欄位", true);
         return;
     }
 
-    log("====== Read Binary ======");
+    log("====== Read Record ======");
     bool ok = false;
     QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
         [this](const QString& msg, bool err) { log(msg, err); });
-    if (!ok) { log("[Read Binary] 通訊失敗", true); return; }
+    if (!ok) { log("[Read Record] 通訊失敗", true); return; }
 
     QString sw = resp.right(4);
     QString data = resp.left(resp.length() - 4);
     if (sw == "9000") {
-        log("✔ Read Binary 成功 SW=9000");
+        log("✔ Read Record 成功 SW=9000");
         log("Data: " + (data.isEmpty() ? QString("(空)") : data));
     }
     else {
-        log("⚠️ Read Binary SW=" + sw, true);
+        log("⚠️ Read Record SW=" + sw, true);
     }
 }
 
-void PageCardOperation::onReadAllBinary()
+void PageCardOperation::onReadAllRecord()
 {
-    QString apdu = m_readAllBinaryFields.buildApdu();
+    QString apdu = m_readAllRecordFields.buildApdu();
     if (apdu.length() < 10) {
-        log("[Read All Binary] APDU 不完整，請確認欄位", true);
+        log("[Read All Record] APDU 不完整，請確認欄位", true);
         return;
     }
 
-    log("====== Read All Binary ======");
+    log("====== Read All Record ======");
     bool ok = false;
     QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
         [this](const QString& msg, bool err) { log(msg, err); });
-    if (!ok) { log("[Read All Binary] 通訊失敗", true); return; }
+    if (!ok) { log("[Read All Record] 通訊失敗", true); return; }
 
     QString sw = resp.right(4);
     QString data = resp.left(resp.length() - 4);
     if (sw == "9000") {
-        log("✔ Read All Binary 成功 SW=9000");
+        log("✔ Read All Record 成功 SW=9000");
         log("Data: " + (data.isEmpty() ? QString("(空)") : data));
     }
     else {
-        log("⚠️ Read All Binary SW=" + sw, true);
+        log("⚠️ Read All Record SW=" + sw, true);
     }
 }
 

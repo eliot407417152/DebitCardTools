@@ -75,17 +75,17 @@ struct VerifyPinFields
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ReadBinaryFields — Read Binary / Read All Binary 共用
-//   Read Binary     : CLA:00 INS:B2 P1:RecN P2:04 Le:L（預設 00）
-//   Read All Binary : CLA:00 INS:B2 P1:RecN P2:05 Le:L（預設 00 00 00）
+// ReadRecordFields — Read Record / Read All Record 共用
+//   Read Record     : CLA:00 INS:B2 P1:RecN P2:04 Le:L（預設 00）
+//   Read All Record : CLA:00 INS:B2 P1:RecN P2:05 Le:L（預設 00 00 00）
 //   （兩者以 le 欄位的 maxLength 決定 Le 要補齊/截斷成幾個 HEX 字元）
 // ─────────────────────────────────────────────────────────────────────────────
-struct ReadBinaryFields
+struct ReadRecordFields
 {
     QLineEdit* cla = nullptr;
     QLineEdit* ins = nullptr;
     QLineEdit* recN = nullptr;   // P1，Record Id，自行輸入
-    QLineEdit* p2 = nullptr;   // 唯讀：04（Read Binary）或 05（Read All Binary）
+    QLineEdit* p2 = nullptr;   // 唯讀：04（Read Record）或 05（Read All Record）
     QLineEdit* le = nullptr;   // Le
 
     QString buildApdu() const;
@@ -121,8 +121,8 @@ private slots:
     void onListFile();
     void onVerifyPin();
     void onUpdateVerifyPinP2();
-    void onReadBinary();
-    void onReadAllBinary();
+    void onReadRecord();
+    void onReadAllRecord();
 
 private:
     void setupUI();
@@ -190,8 +190,8 @@ private:
     ApduFields        m_selectFields;
     ApduFields        m_writeFields;
     VerifyPinFields   m_verifyPinFields;
-    ReadBinaryFields  m_readBinaryFields;
-    ReadBinaryFields  m_readAllBinaryFields;
+    ReadRecordFields  m_readRecordFields;
+    ReadRecordFields  m_readAllRecordFields;
 
     QTextEdit* m_logEdit = nullptr;
 };
