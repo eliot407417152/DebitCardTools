@@ -106,6 +106,7 @@ private slots:
     // ISAM Tab
     void onIsamKeySelected(int index);
     void onUpdateIsam();
+    void onCheckIsamKey();
 
     // LOD Tab
     void onLoadFile();
@@ -162,6 +163,7 @@ private:
     QLabel* m_isamC3CodeLbl = nullptr;
     QLabel* m_isamC1CodeLbl = nullptr;
     QPushButton* m_updateIsamBtn = nullptr;
+    QPushButton* m_checkIsamKeyBtn = nullptr;
 
     // LOD Tab
     QPushButton* m_loadBtn = nullptr;

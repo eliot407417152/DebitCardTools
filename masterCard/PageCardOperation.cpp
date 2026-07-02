@@ -1,5 +1,6 @@
 ﻿#include "PageCardOperation.h"
 #include "IsamKeyUpdater.h"
+#include "IsamKeyChecker.h"
 #include "IsamKeyData.h"
 #include "MasterCardUpdater.h"
 #include "LodLoader.h"
@@ -270,11 +271,20 @@ void PageCardOperation::setupIsamTab(QWidget* tab)
         "QPushButton:disabled { background:#CCC; color:#666; }");
     m_updateIsamBtn->setEnabled(false);
     layout->addWidget(m_updateIsamBtn);
+
+    m_checkIsamKeyBtn = new QPushButton("🔍 檢查卡片 KEY", tab);
+    m_checkIsamKeyBtn->setStyleSheet(
+        "QPushButton { background:#00695C; color:white; padding:10px; "
+        "font-weight:bold; font-size:13px; border-radius:4px; }"
+        "QPushButton:disabled { background:#CCC; color:#666; }");
+    m_checkIsamKeyBtn->setEnabled(false);
+    layout->addWidget(m_checkIsamKeyBtn);
     layout->addStretch();
 
     connect(m_isamKeyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
         this, &PageCardOperation::onIsamKeySelected);
     connect(m_updateIsamBtn, &QPushButton::clicked, this, &PageCardOperation::onUpdateIsam);
+    connect(m_checkIsamKeyBtn, &QPushButton::clicked, this, &PageCardOperation::onCheckIsamKey);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -890,6 +900,7 @@ void PageCardOperation::onIsamKeySelected(int /*index*/)
         m_isamC3CodeLbl->setText("—");
         m_isamC1CodeLbl->setText("—");
         m_updateIsamBtn->setEnabled(false);
+        if (m_checkIsamKeyBtn) m_checkIsamKeyBtn->setEnabled(false);
         return;
     }
     for (const auto& e : IsamKeyData::entries()) {
@@ -898,6 +909,7 @@ void PageCardOperation::onIsamKeySelected(int /*index*/)
             m_isamC3CodeLbl->setText(e.c3Code);
             m_isamC1CodeLbl->setText(e.c1Code);
             m_updateIsamBtn->setEnabled(true);
+            if (m_checkIsamKeyBtn) m_checkIsamKeyBtn->setEnabled(true);
             log(QString("已選擇 KEY：%1  (C3Code=%2, C1Code=%3)")
                 .arg(e.displayName).arg(e.c3Code).arg(e.c1Code));
             break;
@@ -927,6 +939,37 @@ void PageCardOperation::onUpdateIsam()
 
     if (ok) QMessageBox::information(this, "完成", "✔ ISAM 金鑰更新成功！");
     else    QMessageBox::critical(this, "失敗", "ISAM 金鑰更新失敗，請查看日誌。");
+}
+
+void PageCardOperation::onCheckIsamKey()
+{
+    int id = m_isamKeyCombo->currentData().toInt();
+    if (id < 0) return;
+
+    const IsamKeyEntry* entry = nullptr;
+    for (const auto& e : IsamKeyData::entries())
+        if (e.id == id) { entry = &e; break; }
+    if (!entry) return;
+
+    CustomerData d;
+    d.c3 = entry->c3;
+    d.c3Code = entry->c3Code;
+    d.c1 = entry->c1;
+    d.c1Code = entry->c1Code;
+
+    log("====== 開始檢查卡片 KEY ======");
+    IsamKeyChecker checker(m_isamHandle);
+    // 目前未比對 List File，如需比對請將卡片預期的 List File 內容傳入第二個參數
+    KeyCheckResult result = checker.execute(d, QString(),
+        [this](const QString& msg, bool err) { log(msg, err); });
+
+    if (result.success)
+        QMessageBox::information(this, "檢查完成",
+            QString("✔ 卡片 KEY 檢查通過！\nICID：%1").arg(result.icid));
+    else
+        QMessageBox::critical(this, "檢查失敗",
+            QString("❌ 卡片 KEY 檢查未通過。\nICID：%1\n狀態碼：%2\n請查看日誌。")
+            .arg(result.icid, result.lastStatus));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

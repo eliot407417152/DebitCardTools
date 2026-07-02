@@ -128,3 +128,98 @@ QString CardUtils::lookupIsamCdKey(const QString& responseHex)
 
     return {};   // 未知型別 → 回傳空字串
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 「檢查卡片 KEY」功能專用（比照 DESFuc.cs 邏輯）
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 單一 DES 加密／解密一個 8 bytes 區塊，ECB 模式
+QString CardUtils::desSingleBlockHex(const QString& hexKey16, const QString& hexData16, bool encrypt)
+{
+    QByteArray keyBytes = hexToBytes(hexKey16);
+    QByteArray dataBytes = hexToBytes(hexData16);
+    if (keyBytes.size() < 8 || dataBytes.size() < 8) return {};
+
+    DES_cblock key{};
+    memcpy(&key, keyBytes.constData(), 8);
+
+    DES_key_schedule ks;
+    DES_set_key_unchecked(&key, &ks);
+
+    DES_cblock in{}, out{};
+    memcpy(&in, dataBytes.constData(), 8);
+    DES_ecb_encrypt(&in, &out, &ks, encrypt ? DES_ENCRYPT : DES_DECRYPT);
+
+    return bytesToHex(QByteArray(reinterpret_cast<const char*>(out), 8));
+}
+
+// 單一 DES（8 bytes key）以 ECB 模式逐區塊加密／解密任意長度資料
+// 對應 DESFuc.DesEncrypt / DesDecrypt (cbc=false)：同一把 key 對每個 8 bytes 區塊各自運算
+QString CardUtils::desHex(const QString& hexKey16, const QString& hexData, bool encrypt)
+{
+    QString key = hexKey16.left(16);
+    QString result;
+    for (int i = 0; i + 16 <= hexData.length(); i += 16) {
+        QString block = hexData.mid(i, 16);
+        result += desSingleBlockHex(key, block, encrypt);
+    }
+    return result;
+}
+
+// 3DES（key 長度 16/32/48 hex 皆可）逐區塊 EDE 運算，cbc=false
+// 對應 DESFuc.Encrypt3DES：
+//   key 長度 32 hex → 補成 key + key 前 16 hex（共 48 hex）
+//   針對每個 16 hex（8 bytes）資料區塊，依序用各段 key 做 encrypt/decrypt/encrypt...（j 為偶數 encrypt，奇數 decrypt）
+QString CardUtils::tripleDesHex(const QString& hexKey, const QString& hexData)
+{
+    QString key = hexKey;
+    if (key.length() == 32)
+        key = key + key.left(16);
+
+    int dataCount = hexData.length() / 16;
+    int keyCount = key.length() / 16;
+    if (dataCount <= 0 || keyCount <= 0) return {};
+
+    QString result;
+    for (int i = 0; i < dataCount; ++i) {
+        QString tempData = hexData.mid(i * 16, 16);
+        for (int j = 0; j < keyCount; ++j) {
+            QString tempKey = key.mid(j * 16, 16);
+            tempData = desSingleBlockHex(tempKey, tempData, (j % 2 == 0));
+        }
+        result += tempData;
+    }
+    return result;
+}
+
+// Key Diversification：對應 DESFuc.DivKey
+// 主金鑰每 16 hex（8 bytes）切一段，各段各自用單一 DES「解密」input，再串接起來
+QString CardUtils::divKey(const QString& hexMasterKey, const QString& hexInput)
+{
+    int count = hexMasterKey.length() / 16;
+    QString result;
+    for (int i = 0; i < count; ++i) {
+        QString segment = hexMasterKey.mid(i * 16, 16);
+        result += desSingleBlockHex(segment, hexInput.left(16), /*encrypt=*/false);
+    }
+    return result;
+}
+
+// Session Key 計算：對應 DESFuc.GetSessionKey
+// sessionKey = tripleDesHex( tripleDesHex(key, iv, r1), iv, r2 )
+QString CardUtils::getSessionKey(const QString& hexKey, const QString& hexR1, const QString& hexR2)
+{
+    QString inner = tripleDesHex(hexKey, hexR1);
+    return tripleDesHex(inner, hexR2);
+}
+
+// 產生指定 bytes 數的隨機 HEX 字串（對應 DESFuc.GetRandom，預設 8 bytes）
+QString CardUtils::generateRandomHex(int numBytes)
+{
+    QString result;
+    for (int i = 0; i < numBytes; ++i) {
+        quint32 b = QRandomGenerator::global()->bounded(256);
+        result += QString("%1").arg(b, 2, 16, QChar('0')).toUpper();
+    }
+    return result;
+}

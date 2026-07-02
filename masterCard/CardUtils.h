@@ -6,6 +6,7 @@
 #include <QString>
 #include <QByteArray>
 #include <QStringList>
+#include <QRandomGenerator>
 #include <functional>
 #include <winscard.h>
 #include <openssl/des.h>
@@ -68,4 +69,26 @@ public:
     // ── ISAM CD Key 對照表 ───────────────────────────────────────────────────
     // 根據 ISAM 回傳前 2 bytes 選取對應的基礎衍生 CD Key
     static QString lookupIsamCdKey(const QString& responseHex);
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 「檢查卡片 KEY」功能專用（比照 DESFuc.cs 的演算法邏輯，純 HEX 字串介面）
+    // ─────────────────────────────────────────────────────────────────────
+    // 單一 DES（8 bytes key）加密／解密一個 8 bytes 區塊，ECB 模式
+    static QString desSingleBlockHex(const QString& hexKey16, const QString& hexData16, bool encrypt);
+
+    // 單一 DES（8 bytes key）以 ECB 模式逐區塊加密／解密任意長度資料（對應 DESFuc.DesEncrypt / DesDecrypt，cbc=false）
+    static QString desHex(const QString& hexKey16, const QString& hexData, bool encrypt);
+
+    // 3DES（key 長度 16/32/48 hex 皆可）逐區塊 EDE 運算，cbc=false（對應 DESFuc.Encrypt3DES）
+    // key 長度 16 hex：等同單一 DES 加密；key 長度 48 hex：標準三把金鑰 EDE 3DES
+    static QString tripleDesHex(const QString& hexKey, const QString& hexData);
+
+    // Key Diversification（對應 DESFuc.DivKey）：以 8 bytes input 對主金鑰逐段做單一 DES 解密後串接
+    static QString divKey(const QString& hexMasterKey, const QString& hexInput);
+
+    // Session Key 計算（對應 DESFuc.GetSessionKey）
+    static QString getSessionKey(const QString& hexKey, const QString& hexR1, const QString& hexR2);
+
+    // 產生指定 bytes 數的隨機 HEX 字串（對應 DESFuc.GetRandom，預設 8 bytes）
+    static QString generateRandomHex(int numBytes = 8);
 };

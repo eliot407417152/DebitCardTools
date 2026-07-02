@@ -98,6 +98,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="CardUtils.cpp" />
+    <ClCompile Include="IsamKeyChecker.cpp" />
     <ClCompile Include="IsamKeyData.cpp" />
     <ClCompile Include="IsamKeyUpdater.cpp" />
     <ClCompile Include="LodLoader.cpp" />
@@ -111,6 +112,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CardUtils.h" />
+    <ClInclude Include="IsamKeyChecker.h" />
     <ClInclude Include="IsamKeyData.h" />
     <ClInclude Include="IsamKeyUpdater.h" />
     <ClInclude Include="LodLoader.h" />
