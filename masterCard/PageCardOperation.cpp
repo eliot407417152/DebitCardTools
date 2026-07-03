@@ -149,6 +149,85 @@ QString ReadRecordFields::buildApdu() const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// IsamSimpleFields::buildApdu — CLA INS P1 P2 (+ Le 可選)，無 Lc、無 DataIn
+// ─────────────────────────────────────────────────────────────────────────────
+QString IsamSimpleFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    QString result;
+    result += get(cla).leftJustified(2, '0').left(2);
+    result += get(ins).leftJustified(2, '0').left(2);
+    result += get(p1).leftJustified(2, '0').left(2);
+    result += get(p2).leftJustified(2, '0').left(2);
+
+    QString leVal = get(le);
+    if (!leVal.isEmpty()) result += leVal.leftJustified(2, '0').left(2);
+
+    return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WriteKeyFields — buildDataIn / buildApdu
+//   DataIn = EKey + CCode + Limit，Lc 依 DataIn 長度自動計算
+// ─────────────────────────────────────────────────────────────────────────────
+QString WriteKeyFields::buildDataIn() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+    return get(eKey) + get(ccode) + get(limit);
+}
+
+QString WriteKeyFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    QString data = buildDataIn();
+    QString lc = QString("%1").arg(data.length() / 2, 2, 16, QChar('0')).toUpper();
+
+    return get(cla).leftJustified(2, '0').left(2)
+        + get(ins).leftJustified(2, '0').left(2)
+        + get(p1).leftJustified(2, '0').left(2)
+        + get(p2).leftJustified(2, '0').left(2)
+        + lc
+        + data;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// StoreManufacturerKeyFields — buildDataIn / buildApdu
+//   DataIn = KT + EKey + CCode + Limit，Lc 依 DataIn 長度自動計算
+// ─────────────────────────────────────────────────────────────────────────────
+QString StoreManufacturerKeyFields::buildDataIn() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+    return get(kt) + get(eKey) + get(ccode) + get(limit);
+}
+
+QString StoreManufacturerKeyFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    QString data = buildDataIn();
+    QString lc = QString("%1").arg(data.length() / 2, 2, 16, QChar('0')).toUpper();
+
+    return get(cla).leftJustified(2, '0').left(2)
+        + get(ins).leftJustified(2, '0').left(2)
+        + get(p1).leftJustified(2, '0').left(2)
+        + get(p2).leftJustified(2, '0').left(2)
+        + lc
+        + data;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 建構子
 // ─────────────────────────────────────────────────────────────────────────────
 PageCardOperation::PageCardOperation(SCARDHANDLE isamHandle, SCARDHANDLE masterHandle,
@@ -200,17 +279,20 @@ void PageCardOperation::setupUI()
         "QTabBar::tab:selected { background:#0078D4; color:white; }");
 
     auto* isamTab = new QWidget();  setupIsamTab(isamTab);
+    auto* isamCmdTab = new QWidget();  setupIsamCmdTab(isamCmdTab);
     auto* lodTab = new QWidget();  setupLodTab(lodTab);
     auto* apduTab = new QWidget();  setupApduTab(apduTab);
 
     tabWidget->addTab(isamTab, "🔑 ISAM 金鑰");
+    tabWidget->addTab(isamCmdTab, "🔧 ISAM 指令");
     tabWidget->addTab(lodTab, "💳 LOD / 母卡");
     tabWidget->addTab(apduTab, "📡 卡片指令");
 
     // 一般操作模式：不提供製作母卡功能
     if (m_mode == OperationMode::GeneralOperation) {
-        tabWidget->setTabEnabled(1, false);
-        tabWidget->setTabToolTip(1, "一般操作模式不提供母卡製作功能，請切換至母卡製作模式使用。");
+        int lodTabIndex = tabWidget->indexOf(lodTab);
+        tabWidget->setTabEnabled(lodTabIndex, false);
+        tabWidget->setTabToolTip(lodTabIndex, "一般操作模式不提供母卡製作功能，請切換至母卡製作模式使用。");
         if (m_makeMasterBtn) m_makeMasterBtn->setEnabled(false);
         if (m_authBtn)       m_authBtn->setEnabled(false);
     }
@@ -275,6 +357,269 @@ void PageCardOperation::setupIsamTab(QWidget* tab)
     connect(m_isamKeyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
         this, &PageCardOperation::onIsamKeySelected);
     connect(m_updateIsamBtn, &QPushButton::clicked, this, &PageCardOperation::onUpdateIsam);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab 1.5 — ISAM 指令（Select ISAM Object / Get Key Check Code / Generate Random No /
+//            Get TerminalAuthCode / Get Encrypted Key / Write Key / Store Manufacturer Key）
+//   本頁所有指令固定發送至 ISAM 讀卡機通道（m_isamHandle）。
+// ─────────────────────────────────────────────────────────────────────────────
+void PageCardOperation::setupIsamCmdTab(QWidget* tab)
+{
+    auto* scroll = new QScrollArea(tab);
+    scroll->setWidgetResizable(true);
+    auto* content = new QWidget();
+    auto* layout = new QVBoxLayout(content);
+    layout->setSpacing(12);
+
+    auto* noteLbl = new QLabel("以下指令固定發送至 ISAM 讀卡機通道。", content);
+    noteLbl->setStyleSheet("color:#555; font-size:11px; padding:4px;");
+    layout->addWidget(noteLbl);
+
+    // 共用小工具：在一列中加入一個「標籤 + HEX 欄位」直欄
+    auto addCol = [this](QWidget* parent, QHBoxLayout* row, QLineEdit*& outField,
+        const QString& lbl, const QString& def, int maxLen, bool ro) {
+            auto* col = new QVBoxLayout();
+            auto* l = new QLabel(lbl, parent);
+            l->setAlignment(Qt::AlignCenter);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeHexField(parent, maxLen);
+            outField->setText(def);
+            outField->setReadOnly(ro);
+            if (ro) {
+                outField->setStyleSheet(
+                    "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+                    "font-weight:bold; font-size:12px; padding:4px; "
+                    "border:1px dashed #AAA; border-radius:3px; }");
+            }
+            col->addWidget(l);
+            col->addWidget(outField);
+            row->addLayout(col);
+        };
+
+    // ── ① Select ISAM Object ──────────────────────────────────────────────
+    auto* selGrp = new QGroupBox("① Select ISAM Object", content);
+    auto* selLay = new QVBoxLayout(selGrp);
+    auto* selRow = new QHBoxLayout();
+    addCol(selGrp, selRow, m_isamSelectObjFields.cla, "CLA", "82", 2, true);
+    addCol(selGrp, selRow, m_isamSelectObjFields.ins, "INS", "A4", 2, true);
+    addCol(selGrp, selRow, m_isamSelectObjFields.p1, "P1", "00", 2, true);
+    addCol(selGrp, selRow, m_isamSelectObjFields.p2, "P2", "00", 2, true);
+    addCol(selGrp, selRow, m_isamSelectObjFields.lc, "Lc", "02", 2, true);
+    addCol(selGrp, selRow, m_isamSelectObjFields.dataIn, "DataIn", "", 4, false);
+    addCol(selGrp, selRow, m_isamSelectObjFields.le, "Le", "0E", 2, true);
+    selRow->addStretch();
+    selLay->addLayout(selRow);
+    auto* selHint = new QLabel("DataIn：4 個 HEX 字元（2 bytes），請自行輸入。", selGrp);
+    selHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    selLay->addWidget(selHint);
+    auto* selBtn = new QPushButton("▶ 執行 Select ISAM Object", selGrp);
+    selBtn->setStyleSheet(
+        "QPushButton { background:#00897B; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    selLay->addWidget(selBtn);
+    layout->addWidget(selGrp);
+    connect(selBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamSelectObject);
+
+    // ── ② Get Key Check Code ──────────────────────────────────────────────
+    auto* kccGrp = new QGroupBox("② Get Key Check Code", content);
+    auto* kccLay = new QVBoxLayout(kccGrp);
+    auto* kccRow = new QHBoxLayout();
+    addCol(kccGrp, kccRow, m_isamKeyCheckFields.cla, "CLA", "82", 2, true);
+    addCol(kccGrp, kccRow, m_isamKeyCheckFields.ins, "INS", "07", 2, true);
+    addCol(kccGrp, kccRow, m_isamKeyCheckFields.p1, "P1", "", 2, false);
+    addCol(kccGrp, kccRow, m_isamKeyCheckFields.p2, "P2", "00", 2, true);
+    addCol(kccGrp, kccRow, m_isamKeyCheckFields.le, "Le", "07", 2, false);
+    kccRow->addStretch();
+    kccLay->addLayout(kccRow);
+    auto* kccHint = new QLabel("P1：自行輸入。Le 預設 07，亦可自行修改。", kccGrp);
+    kccHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    kccLay->addWidget(kccHint);
+    auto* kccBtn = new QPushButton("▶ 執行 Get Key Check Code", kccGrp);
+    kccBtn->setStyleSheet(
+        "QPushButton { background:#6A1B9A; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    kccLay->addWidget(kccBtn);
+    layout->addWidget(kccGrp);
+    connect(kccBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamGetKeyCheckCode);
+
+    // ── ③ Generate Random No ──────────────────────────────────────────────
+    auto* rndGrp = new QGroupBox("③ Generate Random No", content);
+    auto* rndLay = new QVBoxLayout(rndGrp);
+    auto* rndRow = new QHBoxLayout();
+    addCol(rndGrp, rndRow, m_isamRandomFields.cla, "CLA", "8F", 2, true);
+    addCol(rndGrp, rndRow, m_isamRandomFields.ins, "INS", "86", 2, true);
+    addCol(rndGrp, rndRow, m_isamRandomFields.p1, "P1", "00", 2, true);
+    addCol(rndGrp, rndRow, m_isamRandomFields.p2, "P2", "00", 2, true);
+    addCol(rndGrp, rndRow, m_isamRandomFields.le, "Le", "08", 2, true);
+    rndRow->addStretch();
+    rndLay->addLayout(rndRow);
+    auto* rndBtn = new QPushButton("▶ 執行 Generate Random No", rndGrp);
+    rndBtn->setStyleSheet(
+        "QPushButton { background:#1565C0; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    rndLay->addWidget(rndBtn);
+    layout->addWidget(rndGrp);
+    connect(rndBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamGenerateRandom);
+
+    // ── ④ Get TerminalAuthCode ────────────────────────────────────────────
+    auto* tacGrp = new QGroupBox("④ Get TerminalAuthCode", content);
+    auto* tacLay = new QVBoxLayout(tacGrp);
+    auto* tacRow = new QHBoxLayout();
+    addCol(tacGrp, tacRow, m_isamTermAuthFields.cla, "CLA", "82", 2, true);
+    addCol(tacGrp, tacRow, m_isamTermAuthFields.ins, "INS", "08", 2, true);
+    addCol(tacGrp, tacRow, m_isamTermAuthFields.p1, "P1", "", 2, false);
+    addCol(tacGrp, tacRow, m_isamTermAuthFields.p2, "P2", "00", 2, true);
+    addCol(tacGrp, tacRow, m_isamTermAuthFields.lc, "Lc", "10", 2, true);
+    addCol(tacGrp, tacRow, m_isamTermAuthFields.le, "Le", "08", 2, true);
+    tacRow->addStretch();
+    tacLay->addLayout(tacRow);
+
+    auto* tacDataLbl = new QLabel("DataIn — 16 bytes（Read Binary + Random Num）：", tacGrp);
+    tacDataLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_isamTermAuthFields.dataIn = makeEditField(tacGrp, false);
+    m_isamTermAuthFields.dataIn->setPlaceholderText("輸入 32 個 HEX 字元（16 bytes）");
+    tacLay->addWidget(tacDataLbl);
+    tacLay->addWidget(m_isamTermAuthFields.dataIn);
+
+    auto* tacHint = new QLabel("P1：自行輸入。", tacGrp);
+    tacHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    tacLay->addWidget(tacHint);
+    auto* tacBtn = new QPushButton("▶ 執行 Get TerminalAuthCode", tacGrp);
+    tacBtn->setStyleSheet(
+        "QPushButton { background:#EF6C00; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    tacLay->addWidget(tacBtn);
+    layout->addWidget(tacGrp);
+    connect(tacBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamGetTerminalAuthCode);
+
+    // ── ⑤ Get Encrypted Key ───────────────────────────────────────────────
+    auto* ekGrp = new QGroupBox("⑤ Get Encrypted Key", content);
+    auto* ekLay = new QVBoxLayout(ekGrp);
+    auto* ekRow = new QHBoxLayout();
+    addCol(ekGrp, ekRow, m_isamEncKeyFields.cla, "CLA", "82", 2, true);
+    addCol(ekGrp, ekRow, m_isamEncKeyFields.ins, "INS", "06", 2, true);
+    addCol(ekGrp, ekRow, m_isamEncKeyFields.p1, "P1（ExKID）", "10", 2, false);
+    addCol(ekGrp, ekRow, m_isamEncKeyFields.p2, "P2（KID）", "", 2, false);
+    addCol(ekGrp, ekRow, m_isamEncKeyFields.le, "Le", "00", 2, true);
+    ekRow->addStretch();
+    ekLay->addLayout(ekRow);
+    auto* ekBtn = new QPushButton("▶ 執行 Get Encrypted Key", ekGrp);
+    ekBtn->setStyleSheet(
+        "QPushButton { background:#00838F; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    ekLay->addWidget(ekBtn);
+    layout->addWidget(ekGrp);
+    connect(ekBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamGetEncryptedKey);
+
+    // ── ⑥ Write Key ───────────────────────────────────────────────────────
+    auto* wkGrp = new QGroupBox("⑥ Write Key", content);
+    auto* wkLay = new QVBoxLayout(wkGrp);
+    auto* wkRow = new QHBoxLayout();
+    addCol(wkGrp, wkRow, m_writeKeyFields.cla, "CLA", "82", 2, true);
+    addCol(wkGrp, wkRow, m_writeKeyFields.ins, "INS", "03", 2, true);
+    addCol(wkGrp, wkRow, m_writeKeyFields.p1, "P1（KID）", "", 2, false);
+    addCol(wkGrp, wkRow, m_writeKeyFields.p2, "P2（Key Type）", "", 2, false);
+    addCol(wkGrp, wkRow, m_writeKeyFields.lcDisplay, "Lc", "", 2, true);
+    wkRow->addStretch();
+    wkLay->addLayout(wkRow);
+
+    auto* wkHint1 = new QLabel(
+        "P2（Key Type）：9500 → 08，9502 → 02。Lc 依 DataIn 長度自動計算（0E/16/1E）。", wkGrp);
+    wkHint1->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    wkLay->addWidget(wkHint1);
+
+    auto* wkDataGrp = new QGroupBox("DataIn = EKey + CCode + Limit", wkGrp);
+    auto* wkDataLay = new QVBoxLayout(wkDataGrp);
+    auto addWkLine = [&](QLineEdit*& outField, const QString& lbl,
+        const QString& placeholder, const QString& def) {
+            auto* l = new QLabel(lbl, wkDataGrp);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeEditField(wkDataGrp, false);
+            if (!placeholder.isEmpty()) outField->setPlaceholderText(placeholder);
+            if (!def.isEmpty()) outField->setText(def);
+            wkDataLay->addWidget(l);
+            wkDataLay->addWidget(outField);
+        };
+    addWkLine(m_writeKeyFields.eKey, "EKey（16 或 24 bytes / 32 或 48 個 HEX 字元）：",
+        "輸入加密後金鑰 HEX", QString());
+    addWkLine(m_writeKeyFields.ccode, "CCode（2 bytes / 4 個 HEX 字元）：",
+        "輸入 CCode HEX", QString());
+    addWkLine(m_writeKeyFields.limit, "Limit（4 bytes / 8 個 HEX 字元，預設 FFFFFFFF）：",
+        QString(), "FFFFFFFF");
+    wkLay->addWidget(wkDataGrp);
+
+    connect(m_writeKeyFields.eKey, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateWriteKeyLc);
+    connect(m_writeKeyFields.ccode, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateWriteKeyLc);
+    connect(m_writeKeyFields.limit, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateWriteKeyLc);
+
+    auto* wkBtn = new QPushButton("▶ 執行 Write Key", wkGrp);
+    wkBtn->setStyleSheet(
+        "QPushButton { background:#C62828; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    wkLay->addWidget(wkBtn);
+    layout->addWidget(wkGrp);
+    connect(wkBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamWriteKey);
+    onUpdateWriteKeyLc();   // 初始化 Lc 顯示
+
+    // ── ⑦ Store Manufacturer Key ──────────────────────────────────────────
+    auto* smkGrp = new QGroupBox("⑦ Store Manufacturer Key", content);
+    auto* smkLay = new QVBoxLayout(smkGrp);
+    auto* smkRow = new QHBoxLayout();
+    addCol(smkGrp, smkRow, m_storeMfgKeyFields.cla, "CLA", "82", 2, true);
+    addCol(smkGrp, smkRow, m_storeMfgKeyFields.ins, "INS", "09", 2, true);
+    addCol(smkGrp, smkRow, m_storeMfgKeyFields.p1, "P1（ExKID）", "", 2, false);
+    addCol(smkGrp, smkRow, m_storeMfgKeyFields.p2, "P2（KID）", "", 2, false);
+    addCol(smkGrp, smkRow, m_storeMfgKeyFields.lcDisplay, "Lc", "", 2, true);
+    smkRow->addStretch();
+    smkLay->addLayout(smkRow);
+
+    auto* smkHint1 = new QLabel("Lc 依 DataIn 長度自動計算（0F/17/1F）。", smkGrp);
+    smkHint1->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    smkLay->addWidget(smkHint1);
+
+    auto* smkDataGrp = new QGroupBox("DataIn = KT + EKey + CCode + Limit", smkGrp);
+    auto* smkDataLay = new QVBoxLayout(smkDataGrp);
+    auto addSmkLine = [&](QLineEdit*& outField, const QString& lbl,
+        const QString& placeholder, const QString& def) {
+            auto* l = new QLabel(lbl, smkDataGrp);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeEditField(smkDataGrp, false);
+            if (!placeholder.isEmpty()) outField->setPlaceholderText(placeholder);
+            if (!def.isEmpty()) outField->setText(def);
+            smkDataLay->addWidget(l);
+            smkDataLay->addWidget(outField);
+        };
+    addSmkLine(m_storeMfgKeyFields.kt, "KT（1 byte / 2 個 HEX 字元）：",
+        "輸入 Key Type HEX", QString());
+    addSmkLine(m_storeMfgKeyFields.eKey, "EKey（8 / 16 / 24 bytes）：",
+        "輸入加密後金鑰 HEX", QString());
+    addSmkLine(m_storeMfgKeyFields.ccode, "CCode（2 bytes / 4 個 HEX 字元）：",
+        "輸入 CCode HEX", QString());
+    addSmkLine(m_storeMfgKeyFields.limit, "Limit（4 bytes / 8 個 HEX 字元，預設 FFFFFFFF）：",
+        QString(), "FFFFFFFF");
+    smkLay->addWidget(smkDataGrp);
+
+    connect(m_storeMfgKeyFields.kt, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateStoreMfgKeyLc);
+    connect(m_storeMfgKeyFields.eKey, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateStoreMfgKeyLc);
+    connect(m_storeMfgKeyFields.ccode, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateStoreMfgKeyLc);
+    connect(m_storeMfgKeyFields.limit, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateStoreMfgKeyLc);
+
+    auto* smkBtn = new QPushButton("▶ 執行 Store Manufacturer Key", smkGrp);
+    smkBtn->setStyleSheet(
+        "QPushButton { background:#5C6BC0; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    smkLay->addWidget(smkBtn);
+    layout->addWidget(smkGrp);
+    connect(smkBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamStoreManufacturerKey);
+    onUpdateStoreMfgKeyLc();   // 初始化 Lc 顯示
+
+    layout->addStretch();
+    scroll->setWidget(content);
+
+    auto* tabLayout = new QVBoxLayout(tab);
+    tabLayout->setContentsMargins(0, 0, 0, 0);
+    tabLayout->addWidget(scroll);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -927,6 +1272,170 @@ void PageCardOperation::onUpdateIsam()
 
     if (ok) QMessageBox::information(this, "完成", "✔ ISAM 金鑰更新成功！");
     else    QMessageBox::critical(this, "失敗", "ISAM 金鑰更新失敗，請查看日誌。");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slots — ISAM 指令 Tab（皆固定發送至 m_isamHandle）
+// ─────────────────────────────────────────────────────────────────────────────
+void PageCardOperation::onIsamSelectObject()
+{
+    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+    sendApduFromFields(m_isamHandle, m_isamSelectObjFields, "Select ISAM Object");
+}
+
+void PageCardOperation::onIsamGetKeyCheckCode()
+{
+    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+
+    QString apdu = m_isamKeyCheckFields.buildApdu();
+    if (apdu.length() < 8) {
+        log("[Get Key Check Code] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Get Key Check Code ======");
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Get Key Check Code] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    QString data = resp.left(qMax(0, resp.length() - 4));
+    if (sw == "9000") {
+        log("✔ Get Key Check Code 成功 SW=9000");
+        log("Key Check Code: " + (data.isEmpty() ? QString("(空)") : data));
+    }
+    else {
+        log("⚠️ Get Key Check Code SW=" + sw, true);
+    }
+}
+
+void PageCardOperation::onIsamGenerateRandom()
+{
+    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+
+    QString apdu = m_isamRandomFields.buildApdu();
+    if (apdu.length() < 8) {
+        log("[Generate Random No] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Generate Random No ======");
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Generate Random No] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    QString data = resp.left(qMax(0, resp.length() - 4));
+    if (sw == "9000") {
+        log("✔ Generate Random No 成功 SW=9000");
+        log("Random: " + (data.isEmpty() ? QString("(空)") : data));
+    }
+    else {
+        log("⚠️ Generate Random No SW=" + sw, true);
+    }
+}
+
+void PageCardOperation::onIsamGetTerminalAuthCode()
+{
+    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+    sendApduFromFields(m_isamHandle, m_isamTermAuthFields, "Get TerminalAuthCode");
+}
+
+void PageCardOperation::onIsamGetEncryptedKey()
+{
+    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+
+    QString apdu = m_isamEncKeyFields.buildApdu();
+    if (apdu.length() < 8) {
+        log("[Get Encrypted Key] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Get Encrypted Key ======");
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Get Encrypted Key] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    QString data = resp.left(qMax(0, resp.length() - 4));
+    if (sw == "9000") {
+        log("✔ Get Encrypted Key 成功 SW=9000");
+        log("Encrypted Key: " + (data.isEmpty() ? QString("(空)") : data));
+    }
+    else {
+        log("⚠️ Get Encrypted Key SW=" + sw, true);
+    }
+}
+
+void PageCardOperation::onUpdateWriteKeyLc()
+{
+    if (m_writeKeyFields.lcDisplay) {
+        QString data = m_writeKeyFields.buildDataIn();
+        m_writeKeyFields.lcDisplay->setText(
+            QString("%1").arg(data.length() / 2, 2, 16, QChar('0')).toUpper());
+    }
+}
+
+void PageCardOperation::onIsamWriteKey()
+{
+    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+
+    QString apdu = m_writeKeyFields.buildApdu();   // 呼叫後 Lc 顯示會同步更新
+    onUpdateWriteKeyLc();
+    if (apdu.length() < 10) {
+        log("[Write Key] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Write Key ======");
+    log("DataIn: " + m_writeKeyFields.buildDataIn());
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Write Key] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    if (sw == "9000")
+        log("✔ Write Key 成功 SW=9000");
+    else
+        log("⚠️ Write Key SW=" + sw, true);
+}
+
+void PageCardOperation::onUpdateStoreMfgKeyLc()
+{
+    if (m_storeMfgKeyFields.lcDisplay) {
+        QString data = m_storeMfgKeyFields.buildDataIn();
+        m_storeMfgKeyFields.lcDisplay->setText(
+            QString("%1").arg(data.length() / 2, 2, 16, QChar('0')).toUpper());
+    }
+}
+
+void PageCardOperation::onIsamStoreManufacturerKey()
+{
+    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+
+    QString apdu = m_storeMfgKeyFields.buildApdu();   // 呼叫後 Lc 顯示會同步更新
+    onUpdateStoreMfgKeyLc();
+    if (apdu.length() < 10) {
+        log("[Store Manufacturer Key] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Store Manufacturer Key ======");
+    log("DataIn: " + m_storeMfgKeyFields.buildDataIn());
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Store Manufacturer Key] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    if (sw == "9000")
+        log("✔ Store Manufacturer Key 成功 SW=9000");
+    else
+        log("⚠️ Store Manufacturer Key SW=" + sw, true);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
