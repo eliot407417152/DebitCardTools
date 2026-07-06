@@ -1,20 +1,23 @@
 ﻿#pragma once
 
 #include <QWidget>
+#include <QString>
+#include <QStringList>
+#include <QMap>
+#include <winscard.h>
 #include "CardUtils.h"
-#include "LodLoader.h"
-#include "OperationMode.h"
+#include "IsamKeyChecker.h"   // CustomerData / KeyCheckResult
 
 class QLineEdit;
 class QPushButton;
 class QTextEdit;
 class QLabel;
 class QComboBox;
-class QGroupBox;
 class QVBoxLayout;
+class QGroupBox;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ApduFields — Select File / Write Record 共用的通用 APDU 欄位
+// 各功能區塊的欄位集合（維持原本邏輯不變）
 // ─────────────────────────────────────────────────────────────────────────────
 struct ApduFields
 {
@@ -23,22 +26,32 @@ struct ApduFields
     QLineEdit* p1 = nullptr;
     QLineEdit* p2 = nullptr;
     QLineEdit* lc = nullptr;
-    QLineEdit* le = nullptr;      // 可能為 nullptr（不需要 Le）
-    QLineEdit* dataIn = nullptr;      // 可能為 nullptr（不需要 DataIn）
+    QLineEdit* dataIn = nullptr;
+    QLineEdit* le = nullptr;
 
     QString buildApdu() const;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CreateFileFields — Create File 專用（固定 16 bytes DataIn）
-// ─────────────────────────────────────────────────────────────────────────────
+// CLA INS P1 P2 (+ 可選 Le)，無 Lc、無 DataIn（ISAM 指令頁的簡易指令使用）
+struct IsamSimpleFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* p2 = nullptr;
+    QLineEdit* le = nullptr;
+
+    QString buildApdu() const;
+};
+
+// Create File 專用：16 bytes DataIn 由多個子欄位組成
 struct CreateFileFields
 {
     QLineEdit* cla = nullptr;
     QLineEdit* ins = nullptr;
     QLineEdit* p1 = nullptr;
     QLineEdit* p2 = nullptr;
-    QLineEdit* lcDisplay = nullptr;   // 唯讀，依 DataIn 長度自動計算
+    QLineEdit* lcDisplay = nullptr;
 
     QLineEdit* efid = nullptr;
     QLineEdit* ac1 = nullptr;
@@ -56,112 +69,99 @@ struct CreateFileFields
     QString buildApdu() const;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// VerifyPinFields — Verify Pin 專用
-//   CLA:00 INS:20 P1:00 P2:Pq（輸入後自動邏輯左移 3 位） Lc:08 DATA:PIN
-// ─────────────────────────────────────────────────────────────────────────────
+// Verify Pin 專用：P2 由 Pq 邏輯左移 3 位自動運算
 struct VerifyPinFields
 {
     QLineEdit* cla = nullptr;
     QLineEdit* ins = nullptr;
     QLineEdit* p1 = nullptr;
-    QLineEdit* pq = nullptr;   // 使用者輸入的 Pq（原始值，未位移）
-    QLineEdit* p2Display = nullptr;   // 唯讀，顯示 Pq << 3 後的 P2
-    QLineEdit* lc = nullptr;   // 唯讀，固定 08
-    QLineEdit* pin = nullptr;   // DATA：PIN code（8 bytes / 16 HEX）
+    QLineEdit* pq = nullptr;
+    QLineEdit* p2Display = nullptr;
+    QLineEdit* lc = nullptr;
+    QLineEdit* pin = nullptr;
 
-    QString computedP2() const;       // 計算 Pq 邏輯左移 3 位後的結果
+    QString computedP2() const;
     QString buildApdu() const;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ReadRecordFields — Read Record / Read All Record 共用
-//   Read Record     : CLA:00 INS:B2 P1:RecN P2:04 Le:L（預設 00）
-//   Read All Record : CLA:00 INS:B2 P1:RecN P2:05 Le:L（預設 00 00 00）
-//   （兩者以 le 欄位的 maxLength 決定 Le 要補齊/截斷成幾個 HEX 字元）
-// ─────────────────────────────────────────────────────────────────────────────
+// Read Record / Read All Record 共用
 struct ReadRecordFields
 {
     QLineEdit* cla = nullptr;
     QLineEdit* ins = nullptr;
-    QLineEdit* recN = nullptr;   // P1，Record Id，自行輸入
-    QLineEdit* p2 = nullptr;   // 唯讀：04（Read Record）或 05（Read All Record）
-    QLineEdit* le = nullptr;   // Le
-
-    QString buildApdu() const;
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// IsamSimpleFields — 無 Lc / 無 DataIn，僅 CLA INS P1 P2 (Le 可選) 的 ISAM 指令共用
-//   適用：Get Key Check Code / Generate Random No / Get Encrypted Key
-// ─────────────────────────────────────────────────────────────────────────────
-struct IsamSimpleFields
-{
-    QLineEdit* cla = nullptr;
-    QLineEdit* ins = nullptr;
-    QLineEdit* p1 = nullptr;
+    QLineEdit* recN = nullptr;
     QLineEdit* p2 = nullptr;
-    QLineEdit* le = nullptr;      // 可能為 nullptr（不需要 Le）
+    QLineEdit* le = nullptr;
 
     QString buildApdu() const;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WriteKeyFields — Write Key 專用
-//   CLA:82 INS:03 P1:KID P2:KeyType Lc(自動計算) DataIn = EKey + CCode + Limit
-// ─────────────────────────────────────────────────────────────────────────────
+// ISAM 指令頁 — Write Key
 struct WriteKeyFields
 {
     QLineEdit* cla = nullptr;
     QLineEdit* ins = nullptr;
     QLineEdit* p1 = nullptr;
     QLineEdit* p2 = nullptr;
-    QLineEdit* lcDisplay = nullptr;   // 唯讀，依 DataIn 長度自動計算
+    QLineEdit* lcDisplay = nullptr;
 
-    QLineEdit* cdKey = nullptr;   // CD Key（用於 3DES 加密 Exchange Key，得出 EKey）
-    QLineEdit* exchangeKey = nullptr;   // Exchange Key（基碼，明文）
-    QLineEdit* eKey = nullptr;   // 唯讀，自動計算 = 3DES(CD Key, Exchange Key)，16/24 bytes
-    QLineEdit* ccode = nullptr;   // 2 bytes
-    QLineEdit* limit = nullptr;   // 4 bytes，預設 FFFFFFFF
+    QLineEdit* cdKey = nullptr;
+    QLineEdit* exchangeKey = nullptr;
+    QLineEdit* eKey = nullptr;
+    QLineEdit* ccode = nullptr;
+    QLineEdit* limit = nullptr;
 
     QString buildDataIn() const;
     QString buildApdu() const;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StoreManufacturerKeyFields — Store Manufacturer Key 專用
-//   CLA:82 INS:09 P1:ExKID P2:KID Lc(自動計算) DataIn = KT + EKey + CCode + Limit
-// ─────────────────────────────────────────────────────────────────────────────
+// ISAM 指令頁 — Store Manufacturer Key
 struct StoreManufacturerKeyFields
 {
     QLineEdit* cla = nullptr;
     QLineEdit* ins = nullptr;
     QLineEdit* p1 = nullptr;
     QLineEdit* p2 = nullptr;
-    QLineEdit* lcDisplay = nullptr;   // 唯讀，依 DataIn 長度自動計算
+    QLineEdit* lcDisplay = nullptr;
 
-    QLineEdit* kt = nullptr;   // 1 byte
-    QLineEdit* eKey = nullptr;   // 8/16/24 bytes
-    QLineEdit* ccode = nullptr;   // 2 bytes
-    QLineEdit* limit = nullptr;   // 4 bytes，預設 FFFFFFFF
+    QLineEdit* kt = nullptr;
+    QLineEdit* eKey = nullptr;
+    QLineEdit* ccode = nullptr;
+    QLineEdit* limit = nullptr;
 
     QString buildDataIn() const;
     QString buildApdu() const;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PageCardOperation
+//
+//【已依需求調整】
+//   1. 不再由建構子傳入固定的 ISAM / 母卡 SCARDHANDLE，改傳入
+//      SCARDCONTEXT + 偵測到的讀卡機名稱清單 (QStringList)。
+//   2. 「ISAM 金鑰」「ISAM 指令」兩個頁籤、以及「LOD / 母卡」頁籤，
+//      現在都各自提供「讀卡機選擇」下拉選單（比照原本「卡片指令」頁籤的
+//      「發送對象」下拉選單做法），使用者可自行選擇要用哪一台讀卡機。
+//      實際連線 (SCardConnect) 改為「使用到某台讀卡機時才連線」，並快取
+//      連線代碼，避免重複連線。
+//   3. 「製作母卡」需要選擇兩台不同的讀卡機；若偵測到的讀卡機不足兩台，
+//      「LOD / 母卡」頁籤會直接停用，避免誤觸。
+// ─────────────────────────────────────────────────────────────────────────────
 class PageCardOperation : public QWidget
 {
     Q_OBJECT
 
 public:
-    PageCardOperation(SCARDHANDLE isamHandle, SCARDHANDLE masterHandle,
-        OperationMode mode, QWidget* parent = nullptr);
+    explicit PageCardOperation(SCARDCONTEXT context,
+        const QStringList& readers,
+        QWidget* parent = nullptr);
+    ~PageCardOperation();
 
 signals:
     void backRequested();
 
 private slots:
-    // ISAM Tab
+    // ISAM 金鑰 Tab
     void onIsamKeySelected(int index);
     void onUpdateIsam();
     void onCheckIsamKey();
@@ -172,26 +172,26 @@ private slots:
     void onIsamGenerateRandom();
     void onIsamGetTerminalAuthCode();
     void onIsamGetEncryptedKey();
-    void onIsamWriteKey();
     void onUpdateWriteKeyEKey();
     void onUpdateWriteKeyLc();
-    void onIsamStoreManufacturerKey();
+    void onIsamWriteKey();
     void onUpdateStoreMfgKeyLc();
+    void onIsamStoreManufacturerKey();
 
-    // LOD Tab
+    // LOD / 母卡 Tab
     void onLoadFile();
+    void onClearFields();
     void onAuthenticate();
     void onMakeMaster();
-    void onClearFields();
 
-    // APDU Tab
+    // 卡片指令 Tab
     void onCreateFile();
     void onUpdateCreateLc();
     void onSelectFile();
     void onWriteRecord();
     void onListFile();
-    void onVerifyPin();
     void onUpdateVerifyPinP2();
+    void onVerifyPin();
     void onReadRecord();
     void onReadAllRecord();
 
@@ -216,7 +216,11 @@ private:
     QLineEdit* makeHexField(QWidget* parent, int maxLen, const QString& placeholder = QString());
     QLineEdit* makeEditField(QWidget* parent, bool readOnly);
 
+    // 讀卡機連線輔助：依讀卡機名稱取得（必要時建立並快取）SCARDHANDLE
+    SCARDHANDLE connectReader(const QString& readerName) const;
+    // 供「卡片指令」頁籤使用：讀取該頁籤的「發送對象」下拉選單目前選擇的讀卡機
     SCARDHANDLE getTargetHandle() const;
+
     bool sendApduFromFields(SCARDHANDLE hCard, const ApduFields& fields, const QString& label);
 
     void displayData(const CustomerData& d);
@@ -224,28 +228,35 @@ private:
 
     void log(const QString& msg, bool isError = false);
 
-private:
-    SCARDHANDLE   m_isamHandle = 0;
-    SCARDHANDLE   m_masterHandle = 0;
-    OperationMode m_mode = OperationMode::MasterCardProduction;
+    // ── 讀卡機環境 ──────────────────────────────────────────────────────────
+    SCARDCONTEXT m_context = 0;
+    QStringList  m_readers;
+    bool         m_canMakeMaster = false;   // 讀卡機數量 >= 2 才允許製作母卡
 
-    // ISAM Tab
+    // key: 讀卡機名稱, value: 已連線的 SCARDHANDLE（惰性連線快取）
+    mutable QMap<QString, SCARDHANDLE> m_handleCache;
+
+    // ── ISAM 金鑰 Tab ───────────────────────────────────────────────────────
+    QComboBox* m_isamKeyReaderCombo = nullptr;   // 本頁使用哪一台讀卡機
     QComboBox* m_isamKeyCombo = nullptr;
     QLabel* m_isamC3CodeLbl = nullptr;
     QLabel* m_isamC1CodeLbl = nullptr;
     QPushButton* m_updateIsamBtn = nullptr;
     QPushButton* m_checkIsamKeyBtn = nullptr;
 
-    // ISAM 指令 Tab
-    ApduFields                   m_isamSelectObjFields;   // 1. Select ISAM Object
-    IsamSimpleFields              m_isamKeyCheckFields;     // 2. Get Key Check Code
-    IsamSimpleFields              m_isamRandomFields;       // 3. Generate Random No
-    ApduFields                   m_isamTermAuthFields;     // 4. Get TerminalAuthCode
-    IsamSimpleFields              m_isamEncKeyFields;       // 5. Get Encrypted Key
-    WriteKeyFields                m_writeKeyFields;         // 6. Write Key
-    StoreManufacturerKeyFields    m_storeMfgKeyFields;      // 7. Store Manufacturer Key
+    // ── ISAM 指令 Tab ───────────────────────────────────────────────────────
+    QComboBox* m_isamCmdReaderCombo = nullptr;   // 本頁使用哪一台讀卡機
+    ApduFields m_isamSelectObjFields;
+    IsamSimpleFields m_isamKeyCheckFields;
+    IsamSimpleFields m_isamRandomFields;
+    ApduFields m_isamTermAuthFields;
+    IsamSimpleFields m_isamEncKeyFields;
+    WriteKeyFields m_writeKeyFields;
+    StoreManufacturerKeyFields m_storeMfgKeyFields;
 
-    // LOD Tab
+    // ── LOD / 母卡 Tab ──────────────────────────────────────────────────────
+    QComboBox* m_masterIsamReaderCombo = nullptr;   // 製作母卡：ISAM 讀卡機
+    QComboBox* m_masterCardReaderCombo = nullptr;   // 製作母卡：母卡 讀卡機
     QPushButton* m_loadBtn = nullptr;
     QPushButton* m_clearBtn = nullptr;
     QPushButton* m_makeMasterBtn = nullptr;
@@ -267,13 +278,14 @@ private:
     bool m_loaded = false;
     bool m_authenticated = false;
 
-    // APDU Tab
-    CreateFileFields  m_createFields;
-    ApduFields        m_selectFields;
-    ApduFields        m_writeFields;
-    VerifyPinFields   m_verifyPinFields;
-    ReadRecordFields  m_readRecordFields;
-    ReadRecordFields  m_readAllRecordFields;
+    // ── 卡片指令 Tab ────────────────────────────────────────────────────────
+    CreateFileFields m_createFields;
+    ApduFields m_selectFields;
+    ApduFields m_writeFields;
+    VerifyPinFields m_verifyPinFields;
+    ReadRecordFields m_readRecordFields;
+    ReadRecordFields m_readAllRecordFields;
 
+    // ── 共用 ────────────────────────────────────────────────────────────────
     QTextEdit* m_logEdit = nullptr;
 };

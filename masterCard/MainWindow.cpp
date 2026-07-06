@@ -21,9 +21,8 @@ MainWindow::MainWindow(QWidget* parent)
 void MainWindow::onReaderSelected()
 {
     auto* opPage = new PageCardOperation(
-        m_selectReaderPage->isamHandle(),
-        m_selectReaderPage->masterHandle(),
-        m_selectReaderPage->mode(),
+        m_selectReaderPage->context(),
+        m_selectReaderPage->readers(),
         this);
 
     connect(opPage, &PageCardOperation::backRequested, [this, opPage]() {

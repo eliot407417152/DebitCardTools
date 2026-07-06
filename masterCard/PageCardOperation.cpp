@@ -230,21 +230,63 @@ QString StoreManufacturerKeyFields::buildApdu() const
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 建構子
+//【已依需求調整】不再由上一頁預先指定 ISAM/母卡 handle，
+//   改為接收 context + 讀卡機名稱清單，實際連線改為各功能區塊使用到時才建立。
 // ─────────────────────────────────────────────────────────────────────────────
-PageCardOperation::PageCardOperation(SCARDHANDLE isamHandle, SCARDHANDLE masterHandle,
-    OperationMode mode, QWidget* parent)
-    : QWidget(parent), m_isamHandle(isamHandle), m_masterHandle(masterHandle), m_mode(mode)
+PageCardOperation::PageCardOperation(SCARDCONTEXT context, const QStringList& readers, QWidget* parent)
+    : QWidget(parent), m_context(context), m_readers(readers)
 {
-    setupUI();
-    if (m_isamHandle == 0)
-        log("提示: 未分配 ISAM 連線控制代碼 (Handle=0)", true);
-    else
-        log("✔ ISAM 通訊端已對接。");
+    m_canMakeMaster = (m_readers.size() >= 2);
 
-    if (m_mode == OperationMode::GeneralOperation)
-        log("目前為「一般操作」模式：僅單一讀卡機通道，不提供母卡製作功能。");
+    setupUI();
+
+    log(QString("✔ 偵測到 %1 台讀卡機：%2").arg(m_readers.size()).arg(m_readers.join("、")));
+    if (m_canMakeMaster)
+        log("讀卡機數量足夠（≥2 台），「LOD / 母卡」製作母卡功能已啟用。");
     else
-        log("目前為「母卡製作」模式：雙讀卡機通道已就緒。");
+        log("讀卡機數量不足 2 台，「LOD / 母卡」製作母卡功能已停用。");
+}
+
+PageCardOperation::~PageCardOperation()
+{
+    for (auto it = m_handleCache.begin(); it != m_handleCache.end(); ++it) {
+        if (it.value())
+            SCardDisconnect(it.value(), SCARD_LEAVE_CARD);
+    }
+    m_handleCache.clear();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 讀卡機連線輔助：依名稱取得已快取的連線，若尚未連線則現場建立
+// ─────────────────────────────────────────────────────────────────────────────
+SCARDHANDLE PageCardOperation::connectReader(const QString& readerName) const
+{
+    if (readerName.isEmpty()) {
+        const_cast<PageCardOperation*>(this)->log("Error: 尚未選擇讀卡機", true);
+        return 0;
+    }
+
+    auto it = m_handleCache.find(readerName);
+    if (it != m_handleCache.end() && it.value() != 0)
+        return it.value();
+
+    DWORD proto = 0;
+    SCARDHANDLE h = 0;
+    LONG ret = SCardConnectA(m_context,
+        readerName.toLocal8Bit().constData(),
+        SCARD_SHARE_SHARED,
+        SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1,
+        &h, &proto);
+
+    if (ret != SCARD_S_SUCCESS) {
+        const_cast<PageCardOperation*>(this)->log(
+            QString("SCardConnect [%1] 失敗: 0x%2").arg(readerName).arg(ret, 0, 16), true);
+        return 0;
+    }
+
+    m_handleCache.insert(readerName, h);
+    const_cast<PageCardOperation*>(this)->log(QString("✔ 已連線讀卡機：%1").arg(readerName));
+    return h;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -262,9 +304,9 @@ void PageCardOperation::setupUI()
     connect(backBtn, &QPushButton::clicked, this, &PageCardOperation::backRequested);
     btnRow->addWidget(backBtn);
 
-    QString modeText = (m_mode == OperationMode::MasterCardProduction)
-        ? "🔮 模式：母卡製作"
-        : "🛠 模式：一般操作（無母卡製作功能）";
+    QString modeText = QString("讀卡機：%1 台偵測到 %2")
+        .arg(m_readers.size())
+        .arg(m_canMakeMaster ? "（🔮 可製作母卡）" : "（🛠 僅一般操作，母卡功能需 ≥2 台讀卡機）");
     auto* modeLbl = new QLabel(modeText, this);
     modeLbl->setStyleSheet("font-weight:bold; color:#555; padding-left:12px;");
     btnRow->addWidget(modeLbl);
@@ -289,11 +331,11 @@ void PageCardOperation::setupUI()
     tabWidget->addTab(lodTab, "💳 LOD / 母卡");
     tabWidget->addTab(apduTab, "📡 卡片指令");
 
-    // 一般操作模式：不提供製作母卡功能
-    if (m_mode == OperationMode::GeneralOperation) {
+    // 讀卡機數量不足 2 台：不提供製作母卡功能
+    if (!m_canMakeMaster) {
         int lodTabIndex = tabWidget->indexOf(lodTab);
         tabWidget->setTabEnabled(lodTabIndex, false);
-        tabWidget->setTabToolTip(lodTabIndex, "一般操作模式不提供母卡製作功能，請切換至母卡製作模式使用。");
+        tabWidget->setTabToolTip(lodTabIndex, "目前讀卡機數量不足 2 台，無法製作母卡，請插入第 2 台讀卡機後重新進入。");
         if (m_makeMasterBtn) m_makeMasterBtn->setEnabled(false);
         if (m_authBtn)       m_authBtn->setEnabled(false);
     }
@@ -320,6 +362,14 @@ void PageCardOperation::setupUI()
 void PageCardOperation::setupIsamTab(QWidget* tab)
 {
     auto* layout = new QVBoxLayout(tab);
+
+    // ── 讀卡機選擇（本頁指令要發送到哪一台讀卡機）──────────────────────────
+    auto* readerGrp = new QGroupBox("讀卡機選擇");
+    auto* readerForm = new QFormLayout(readerGrp);
+    m_isamKeyReaderCombo = new QComboBox(tab);
+    m_isamKeyReaderCombo->addItems(m_readers);
+    readerForm->addRow("發送對象：", m_isamKeyReaderCombo);
+    layout->addWidget(readerGrp);
 
     auto* selGrp = new QGroupBox("選擇 ISAM KEY");
     auto* selForm = new QFormLayout(selGrp);
@@ -372,7 +422,7 @@ void PageCardOperation::setupIsamTab(QWidget* tab)
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab 1.5 — ISAM 指令（Select ISAM Object / Get Key Check Code / Generate Random No /
 //            Get TerminalAuthCode / Get Encrypted Key / Write Key / Store Manufacturer Key）
-//   本頁所有指令固定發送至 ISAM 讀卡機通道（m_isamHandle）。
+//   本頁所有指令發送至使用者於上方選擇的讀卡機（m_isamCmdReaderCombo）。
 // ─────────────────────────────────────────────────────────────────────────────
 void PageCardOperation::setupIsamCmdTab(QWidget* tab)
 {
@@ -382,7 +432,15 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
     auto* layout = new QVBoxLayout(content);
     layout->setSpacing(12);
 
-    auto* noteLbl = new QLabel("以下指令固定發送至 ISAM 讀卡機通道。", content);
+    // ── 讀卡機選擇（本頁指令要發送到哪一台讀卡機）──────────────────────────
+    auto* readerGrp = new QGroupBox("讀卡機選擇", content);
+    auto* readerForm = new QFormLayout(readerGrp);
+    m_isamCmdReaderCombo = new QComboBox(content);
+    m_isamCmdReaderCombo->addItems(m_readers);
+    readerForm->addRow("發送對象：", m_isamCmdReaderCombo);
+    layout->addWidget(readerGrp);
+
+    auto* noteLbl = new QLabel("以下指令發送至上方選擇的讀卡機。", content);
     noteLbl->setStyleSheet("color:#555; font-size:11px; padding:4px;");
     layout->addWidget(noteLbl);
 
@@ -660,6 +718,22 @@ void PageCardOperation::setupLodTab(QWidget* tab)
 {
     auto* layout = new QVBoxLayout(tab);
 
+    // ── 製作母卡：需選擇兩台不同的讀卡機（ISAM / 母卡）──────────────────────
+    auto* readerGrp = new QGroupBox("製作母卡 — 讀卡機選擇（需 2 台不同讀卡機）", tab);
+    auto* readerForm = new QFormLayout(readerGrp);
+    m_masterIsamReaderCombo = new QComboBox(tab);
+    m_masterCardReaderCombo = new QComboBox(tab);
+    m_masterIsamReaderCombo->addItems(m_readers);
+    m_masterCardReaderCombo->addItems(m_readers);
+    if (m_readers.size() > 1) m_masterCardReaderCombo->setCurrentIndex(1);
+    readerForm->addRow("🔑 ISAM 讀卡機：", m_masterIsamReaderCombo);
+    readerForm->addRow("💳 母卡 讀卡機：", m_masterCardReaderCombo);
+    layout->addWidget(readerGrp);
+    if (!m_canMakeMaster) {
+        readerGrp->setEnabled(false);
+        readerGrp->setToolTip("目前讀卡機數量不足 2 台，無法製作母卡。");
+    }
+
     auto* btnRow = new QHBoxLayout();
     m_loadBtn = new QPushButton("📂 載入 LOD", tab);
     m_loadBtn->setStyleSheet("QPushButton { background:#4CAF50; color:white; padding:8px 16px; font-weight:bold; border-radius:4px; }");
@@ -734,18 +808,11 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     auto* layout = new QVBoxLayout(content);
     layout->setSpacing(12);
 
-    // ── 讀卡機選擇（選母卡或 ISAM）──
+    // ── 讀卡機選擇（比照 ISAM 頁籤做法，自行選擇本頁指令要發送到哪一台讀卡機）──
     auto* targetGrp = new QGroupBox("目標讀卡機");
     auto* targetForm = new QFormLayout(targetGrp);
     auto* m_targetCombo = new QComboBox(content);
-    if (m_mode == OperationMode::MasterCardProduction) {
-        m_targetCombo->addItem("母卡 (Master Card)", 0);
-        m_targetCombo->addItem("ISAM 卡", 1);
-    }
-    else {
-        // 一般操作模式：僅有單一讀卡機通道（掛在 ISAM handle 上）
-        m_targetCombo->addItem("讀卡機（單一通道）", 1);
-    }
+    m_targetCombo->addItems(m_readers);
     targetForm->addRow("發送對象：", m_targetCombo);
     layout->addWidget(targetGrp);
 
@@ -1220,15 +1287,13 @@ QLineEdit* PageCardOperation::makeEditField(QWidget* parent, bool readOnly)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 輔助：取目標 handle
+// 輔助：取「卡片指令」頁籤目前選擇的目標讀卡機 handle（惰性連線）
 // ─────────────────────────────────────────────────────────────────────────────
 SCARDHANDLE PageCardOperation::getTargetHandle() const
 {
-    // 找 apduTargetCombo
     auto* combo = findChild<QComboBox*>("apduTargetCombo");
-    if (combo && combo->currentData().toInt() == 1)
-        return m_isamHandle;
-    return m_masterHandle;
+    QString readerName = combo ? combo->currentText() : QString();
+    return connectReader(readerName);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1307,8 +1372,11 @@ void PageCardOperation::onUpdateIsam()
     d.c1 = entry->c1;
     d.c1Code = entry->c1Code;
 
+    SCARDHANDLE hIsam = connectReader(m_isamKeyReaderCombo ? m_isamKeyReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+
     log("====== 開始 ISAM 金鑰更新 ======");
-    IsamKeyUpdater updater(m_isamHandle);
+    IsamKeyUpdater updater(hIsam);
     bool ok = updater.execute(d, [this](const QString& msg, bool err) { log(msg, err); });
 
     if (ok) QMessageBox::information(this, "完成", "✔ ISAM 金鑰更新成功！");
@@ -1331,8 +1399,11 @@ void PageCardOperation::onCheckIsamKey()
     d.c1 = entry->c1;
     d.c1Code = entry->c1Code;
 
+    SCARDHANDLE hIsam = connectReader(m_isamKeyReaderCombo ? m_isamKeyReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+
     log("====== 開始檢查卡片 KEY ======");
-    IsamKeyChecker checker(m_isamHandle);
+    IsamKeyChecker checker(hIsam);
     // 目前未比對 List File，如需比對請將卡片預期的 List File 內容傳入第二個參數
     KeyCheckResult result = checker.execute(d, QString(),
         [this](const QString& msg, bool err) { log(msg, err); });
@@ -1347,17 +1418,19 @@ void PageCardOperation::onCheckIsamKey()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Slots — ISAM 指令 Tab（皆固定發送至 m_isamHandle）
+// Slots — ISAM 指令 Tab（皆發送至使用者選擇的讀卡機）
 // ─────────────────────────────────────────────────────────────────────────────
 void PageCardOperation::onIsamSelectObject()
 {
-    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
-    sendApduFromFields(m_isamHandle, m_isamSelectObjFields, "Select ISAM Object");
+    SCARDHANDLE hIsam = connectReader(m_isamCmdReaderCombo ? m_isamCmdReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+    sendApduFromFields(hIsam, m_isamSelectObjFields, "Select ISAM Object");
 }
 
 void PageCardOperation::onIsamGetKeyCheckCode()
 {
-    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+    SCARDHANDLE hIsam = connectReader(m_isamCmdReaderCombo ? m_isamCmdReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
 
     QString apdu = m_isamKeyCheckFields.buildApdu();
     if (apdu.length() < 8) {
@@ -1367,7 +1440,7 @@ void PageCardOperation::onIsamGetKeyCheckCode()
 
     log("====== Get Key Check Code ======");
     bool ok = false;
-    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+    QString resp = CardUtils::sendApdu(hIsam, apdu, ok,
         [this](const QString& msg, bool err) { log(msg, err); });
     if (!ok) { log("[Get Key Check Code] 通訊失敗", true); return; }
 
@@ -1384,7 +1457,8 @@ void PageCardOperation::onIsamGetKeyCheckCode()
 
 void PageCardOperation::onIsamGenerateRandom()
 {
-    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+    SCARDHANDLE hIsam = connectReader(m_isamCmdReaderCombo ? m_isamCmdReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
 
     QString apdu = m_isamRandomFields.buildApdu();
     if (apdu.length() < 8) {
@@ -1394,7 +1468,7 @@ void PageCardOperation::onIsamGenerateRandom()
 
     log("====== Generate Random No ======");
     bool ok = false;
-    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+    QString resp = CardUtils::sendApdu(hIsam, apdu, ok,
         [this](const QString& msg, bool err) { log(msg, err); });
     if (!ok) { log("[Generate Random No] 通訊失敗", true); return; }
 
@@ -1411,13 +1485,15 @@ void PageCardOperation::onIsamGenerateRandom()
 
 void PageCardOperation::onIsamGetTerminalAuthCode()
 {
-    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
-    sendApduFromFields(m_isamHandle, m_isamTermAuthFields, "Get TerminalAuthCode");
+    SCARDHANDLE hIsam = connectReader(m_isamCmdReaderCombo ? m_isamCmdReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+    sendApduFromFields(hIsam, m_isamTermAuthFields, "Get TerminalAuthCode");
 }
 
 void PageCardOperation::onIsamGetEncryptedKey()
 {
-    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+    SCARDHANDLE hIsam = connectReader(m_isamCmdReaderCombo ? m_isamCmdReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
 
     QString apdu = m_isamEncKeyFields.buildApdu();
     if (apdu.length() < 8) {
@@ -1427,7 +1503,7 @@ void PageCardOperation::onIsamGetEncryptedKey()
 
     log("====== Get Encrypted Key ======");
     bool ok = false;
-    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+    QString resp = CardUtils::sendApdu(hIsam, apdu, ok,
         [this](const QString& msg, bool err) { log(msg, err); });
     if (!ok) { log("[Get Encrypted Key] 通訊失敗", true); return; }
 
@@ -1472,7 +1548,8 @@ void PageCardOperation::onUpdateWriteKeyLc()
 
 void PageCardOperation::onIsamWriteKey()
 {
-    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+    SCARDHANDLE hIsam = connectReader(m_isamCmdReaderCombo ? m_isamCmdReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
 
     onUpdateWriteKeyEKey();   // 確保 EKey / Lc 為最新值
     if (m_writeKeyFields.eKey && m_writeKeyFields.eKey->text().isEmpty()) {
@@ -1490,7 +1567,7 @@ void PageCardOperation::onIsamWriteKey()
     log("EKey: " + m_writeKeyFields.eKey->text());
     log("DataIn: " + m_writeKeyFields.buildDataIn());
     bool ok = false;
-    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+    QString resp = CardUtils::sendApdu(hIsam, apdu, ok,
         [this](const QString& msg, bool err) { log(msg, err); });
     if (!ok) { log("[Write Key] 通訊失敗", true); return; }
 
@@ -1512,7 +1589,8 @@ void PageCardOperation::onUpdateStoreMfgKeyLc()
 
 void PageCardOperation::onIsamStoreManufacturerKey()
 {
-    if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+    SCARDHANDLE hIsam = connectReader(m_isamCmdReaderCombo ? m_isamCmdReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
 
     QString apdu = m_storeMfgKeyFields.buildApdu();   // 呼叫後 Lc 顯示會同步更新
     onUpdateStoreMfgKeyLc();
@@ -1524,7 +1602,7 @@ void PageCardOperation::onIsamStoreManufacturerKey()
     log("====== Store Manufacturer Key ======");
     log("DataIn: " + m_storeMfgKeyFields.buildDataIn());
     bool ok = false;
-    QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,
+    QString resp = CardUtils::sendApdu(hIsam, apdu, ok,
         [this](const QString& msg, bool err) { log(msg, err); });
     if (!ok) { log("[Store Manufacturer Key] 通訊失敗", true); return; }
 
@@ -1556,7 +1634,7 @@ void PageCardOperation::onLoadFile()
     m_fileLabel->setText("✔ " + path.section('/', -1));
     m_fileLabel->setStyleSheet("color:#2E7D32; font-weight:bold;");
     displayData(m_data);
-    if (m_mode == OperationMode::MasterCardProduction)
+    if (m_canMakeMaster)
         m_makeMasterBtn->setEnabled(true);
     log("✔ LOD 載入：" + m_data.name);
     for (const auto& w : warnings) log("⚠️ " + w, true);
@@ -1564,13 +1642,27 @@ void PageCardOperation::onLoadFile()
 
 void PageCardOperation::onAuthenticate()
 {
-    if (m_mode == OperationMode::GeneralOperation) {
-        log("一般操作模式不提供母卡認證功能。", true);
+    if (!m_canMakeMaster) {
+        log("讀卡機數量不足 2 台，不提供母卡認證功能。", true);
+        return;
+    }
+
+    QString isamReaderName = m_masterIsamReaderCombo ? m_masterIsamReaderCombo->currentText() : QString();
+    QString cardReaderName = m_masterCardReaderCombo ? m_masterCardReaderCombo->currentText() : QString();
+    if (isamReaderName.isEmpty() || cardReaderName.isEmpty() || isamReaderName == cardReaderName) {
+        QMessageBox::warning(this, "設定錯誤", "請選擇兩台不同的讀卡機（ISAM／母卡）。");
+        return;
+    }
+
+    SCARDHANDLE hIsam = connectReader(isamReaderName);
+    SCARDHANDLE hMaster = connectReader(cardReaderName);
+    if (hIsam == 0 || hMaster == 0) {
+        QMessageBox::critical(this, "連線失敗", "無法連線所選讀卡機，請確認卡片已插好。");
         return;
     }
 
     log("====== 🔐 母卡認證 ======");
-    MasterCardUpdater mc(m_masterHandle, m_isamHandle);
+    MasterCardUpdater mc(hMaster, hIsam);
     bool ok = mc.authenticate([this](const QString& msg, bool err) { log(msg, err); });
 
     if (ok) {
@@ -1593,8 +1685,22 @@ void PageCardOperation::onAuthenticate()
 
 void PageCardOperation::onMakeMaster()
 {
-    if (m_mode == OperationMode::GeneralOperation) {
-        log("一般操作模式不提供製作母卡功能。", true);
+    if (!m_canMakeMaster) {
+        log("讀卡機數量不足 2 台，不提供製作母卡功能。", true);
+        return;
+    }
+
+    QString isamReaderName = m_masterIsamReaderCombo ? m_masterIsamReaderCombo->currentText() : QString();
+    QString cardReaderName = m_masterCardReaderCombo ? m_masterCardReaderCombo->currentText() : QString();
+    if (isamReaderName.isEmpty() || cardReaderName.isEmpty() || isamReaderName == cardReaderName) {
+        QMessageBox::warning(this, "設定錯誤", "請選擇兩台不同的讀卡機（ISAM／母卡）。");
+        return;
+    }
+
+    SCARDHANDLE hIsam = connectReader(isamReaderName);
+    SCARDHANDLE hMaster = connectReader(cardReaderName);
+    if (hIsam == 0 || hMaster == 0) {
+        QMessageBox::critical(this, "連線失敗", "無法連線所選讀卡機，請確認卡片已插好。");
         return;
     }
 
@@ -1607,7 +1713,7 @@ void PageCardOperation::onMakeMaster()
     // 若尚未認證，先自動執行認證
     if (!m_authenticated) {
         log("⚠️ 尚未認證，自動執行認證...");
-        MasterCardUpdater mcAuth(m_masterHandle, m_isamHandle);
+        MasterCardUpdater mcAuth(hMaster, hIsam);
         if (!mcAuth.authenticate([this](const QString& msg, bool err) { log(msg, err); })) {
             QMessageBox::critical(this, "失敗", "母卡認證失敗，請先按「母卡認證」後再試。");
             return;
@@ -1616,7 +1722,7 @@ void PageCardOperation::onMakeMaster()
     }
 
     log("====== 開始製作母卡 ======");
-    MasterCardUpdater mc(m_masterHandle, m_isamHandle);
+    MasterCardUpdater mc(hMaster, hIsam);
     bool ok = mc.writeData(d, d.pinA, d.pinB, [this](const QString& m, bool e) { log(m, e); });
 
     // 寫入後重置認證狀態（每次寫入都需要重新認證）

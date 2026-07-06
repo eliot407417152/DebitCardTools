@@ -1,17 +1,28 @@
 ﻿#pragma once
 
 #include <QWidget>
+#include <QString>
+#include <QStringList>
 #include <winscard.h>
-#include "OperationMode.h"
 
-class QComboBox;
 class QPushButton;
 class QLabel;
 class QTextEdit;
-class QRadioButton;
-class QButtonGroup;
-class QFormLayout;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PageSelectReader
+//
+//【已依需求調整】
+//   本頁不再提供「指派讀卡機用途」的手動選擇（不再有 ISAM／母卡 讀卡機下拉選單，
+//   也不再有「母卡製作／一般操作」模式選擇）。
+//   本頁僅單純「偵測」目前插著的讀卡機，只要偵測到至少 1 台讀卡機，
+//   即可直接按「進入」前往操作頁面。
+//
+//   實際要用哪一台讀卡機做 ISAM 操作、哪一台做母卡操作，
+//   改到「操作頁面 (PageCardOperation)」的各功能區塊中，
+//   以下拉選單個別選擇（做法比照原本「卡片指令」頁的「發送對象」下拉選單）。
+//   若目前偵測到的讀卡機少於 2 台，操作頁面會自動停用「製作母卡」相關功能。
+// ─────────────────────────────────────────────────────────────────────────────
 class PageSelectReader : public QWidget
 {
     Q_OBJECT
@@ -20,9 +31,9 @@ public:
     explicit PageSelectReader(QWidget* parent = nullptr);
     ~PageSelectReader();
 
-    SCARDHANDLE   isamHandle()   const;
-    SCARDHANDLE   masterHandle() const;
-    OperationMode mode()         const;   // 目前選擇的操作模式
+    // 提供給下一頁 (PageCardOperation) 使用：連線環境與目前偵測到的讀卡機名稱清單
+    SCARDCONTEXT context() const;
+    QStringList  readers() const;
 
 signals:
     void readerSelected();
@@ -30,34 +41,15 @@ signals:
 private slots:
     void onRefresh();
     void onConfirm();
-    void onModeChanged();   // 母卡製作 / 一般操作 切換
 
 private:
     void setupUI();
-    void applyModeUI();     // 依模式顯示/隱藏「母卡讀卡機」欄位、調整文字
-    bool connectCard(const QString& readerName, SCARDHANDLE& outHandle);
     void log(const QString& msg, bool isError = false);
 
-private:
     SCARDCONTEXT m_context = 0;
-    SCARDHANDLE  m_isamHandle = 0;
-    SCARDHANDLE  m_masterHandle = 0;
+    QStringList  m_readers;
 
-    OperationMode m_mode = OperationMode::MasterCardProduction;
-
-    // 模式選擇
-    QRadioButton* m_modeMasterRadio = nullptr;
-    QRadioButton* m_modeGeneralRadio = nullptr;
-    QButtonGroup* m_modeGroup = nullptr;
-
-    // 讀卡機指派
     QLabel* m_statusLabel = nullptr;
-    QFormLayout* m_readerForm = nullptr;
-    QComboBox* m_isamCombo = nullptr;   // 母卡製作模式：ISAM 讀卡機／一般操作模式：唯一讀卡機
-    QComboBox* m_cardCombo = nullptr;   // 僅母卡製作模式使用
-    QLabel* m_isamRowLabel = nullptr;   // 隨模式切換文字
-    QLabel* m_cardRowLabel = nullptr;   // 一般操作模式隱藏
-
     QPushButton* m_refreshBtn = nullptr;
     QPushButton* m_confirmBtn = nullptr;
     QTextEdit* m_logEdit = nullptr;
