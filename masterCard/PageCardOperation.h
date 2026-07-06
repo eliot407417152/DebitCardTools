@@ -91,6 +91,62 @@ struct ReadRecordFields
     QString buildApdu() const;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// IsamSimpleFields — 無 Lc / 無 DataIn，僅 CLA INS P1 P2 (Le 可選) 的 ISAM 指令共用
+//   適用：Get Key Check Code / Generate Random No / Get Encrypted Key
+// ─────────────────────────────────────────────────────────────────────────────
+struct IsamSimpleFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* p2 = nullptr;
+    QLineEdit* le = nullptr;      // 可能為 nullptr（不需要 Le）
+
+    QString buildApdu() const;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WriteKeyFields — Write Key 專用
+//   CLA:82 INS:03 P1:KID P2:KeyType Lc(自動計算) DataIn = EKey + CCode + Limit
+// ─────────────────────────────────────────────────────────────────────────────
+struct WriteKeyFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* p2 = nullptr;
+    QLineEdit* lcDisplay = nullptr;   // 唯讀，依 DataIn 長度自動計算
+
+    QLineEdit* eKey = nullptr;   // 16/24 bytes
+    QLineEdit* ccode = nullptr;   // 2 bytes
+    QLineEdit* limit = nullptr;   // 4 bytes，預設 FFFFFFFF
+
+    QString buildDataIn() const;
+    QString buildApdu() const;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// StoreManufacturerKeyFields — Store Manufacturer Key 專用
+//   CLA:82 INS:09 P1:ExKID P2:KID Lc(自動計算) DataIn = KT + EKey + CCode + Limit
+// ─────────────────────────────────────────────────────────────────────────────
+struct StoreManufacturerKeyFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* p2 = nullptr;
+    QLineEdit* lcDisplay = nullptr;   // 唯讀，依 DataIn 長度自動計算
+
+    QLineEdit* kt = nullptr;   // 1 byte
+    QLineEdit* eKey = nullptr;   // 8/16/24 bytes
+    QLineEdit* ccode = nullptr;   // 2 bytes
+    QLineEdit* limit = nullptr;   // 4 bytes，預設 FFFFFFFF
+
+    QString buildDataIn() const;
+    QString buildApdu() const;
+};
+
 class PageCardOperation : public QWidget
 {
     Q_OBJECT
@@ -107,6 +163,17 @@ private slots:
     void onIsamKeySelected(int index);
     void onUpdateIsam();
     void onCheckIsamKey();
+
+    // ISAM 指令 Tab
+    void onIsamSelectObject();
+    void onIsamGetKeyCheckCode();
+    void onIsamGenerateRandom();
+    void onIsamGetTerminalAuthCode();
+    void onIsamGetEncryptedKey();
+    void onIsamWriteKey();
+    void onUpdateWriteKeyLc();
+    void onIsamStoreManufacturerKey();
+    void onUpdateStoreMfgKeyLc();
 
     // LOD Tab
     void onLoadFile();
@@ -128,6 +195,7 @@ private slots:
 private:
     void setupUI();
     void setupIsamTab(QWidget* tab);
+    void setupIsamCmdTab(QWidget* tab);
     void setupLodTab(QWidget* tab);
     void setupApduTab(QWidget* tab);
     void setupCreateFileGroup(QWidget* parent, QVBoxLayout* layout);
@@ -164,6 +232,15 @@ private:
     QLabel* m_isamC1CodeLbl = nullptr;
     QPushButton* m_updateIsamBtn = nullptr;
     QPushButton* m_checkIsamKeyBtn = nullptr;
+
+    // ISAM 指令 Tab
+    ApduFields                   m_isamSelectObjFields;   // 1. Select ISAM Object
+    IsamSimpleFields              m_isamKeyCheckFields;     // 2. Get Key Check Code
+    IsamSimpleFields              m_isamRandomFields;       // 3. Generate Random No
+    ApduFields                   m_isamTermAuthFields;     // 4. Get TerminalAuthCode
+    IsamSimpleFields              m_isamEncKeyFields;       // 5. Get Encrypted Key
+    WriteKeyFields                m_writeKeyFields;         // 6. Write Key
+    StoreManufacturerKeyFields    m_storeMfgKeyFields;      // 7. Store Manufacturer Key
 
     // LOD Tab
     QPushButton* m_loadBtn = nullptr;
