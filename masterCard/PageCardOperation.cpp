@@ -539,27 +539,48 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
     wkHint1->setStyleSheet("color:#555; font-size:11px; padding:2px;");
     wkLay->addWidget(wkHint1);
 
+    // EKey 來源：CD Key 對 Exchange Key 做 3DES 加密，自動算出 EKey
+    auto* wkSrcGrp = new QGroupBox("EKey 來源（CD Key 3DES 加密 Exchange Key）", wkGrp);
+    auto* wkSrcLay = new QVBoxLayout(wkSrcGrp);
+    auto addWkSrcLine = [&](QLineEdit*& outField, const QString& lbl, const QString& placeholder) {
+        auto* l = new QLabel(lbl, wkSrcGrp);
+        l->setStyleSheet("font-weight:bold; font-size:11px;");
+        outField = makeEditField(wkSrcGrp, false);
+        if (!placeholder.isEmpty()) outField->setPlaceholderText(placeholder);
+        wkSrcLay->addWidget(l);
+        wkSrcLay->addWidget(outField);
+        };
+    addWkSrcLine(m_writeKeyFields.cdKey, "CD Key：", "輸入 CD Key HEX");
+    addWkSrcLine(m_writeKeyFields.exchangeKey, "Exchange Key（明碼基碼）：", "輸入 Exchange Key HEX");
+    wkLay->addWidget(wkSrcGrp);
+
     auto* wkDataGrp = new QGroupBox("DataIn = EKey + CCode + Limit", wkGrp);
     auto* wkDataLay = new QVBoxLayout(wkDataGrp);
     auto addWkLine = [&](QLineEdit*& outField, const QString& lbl,
-        const QString& placeholder, const QString& def) {
+        const QString& placeholder, const QString& def, bool ro) {
             auto* l = new QLabel(lbl, wkDataGrp);
             l->setStyleSheet("font-weight:bold; font-size:11px;");
-            outField = makeEditField(wkDataGrp, false);
+            outField = makeEditField(wkDataGrp, ro);
             if (!placeholder.isEmpty()) outField->setPlaceholderText(placeholder);
             if (!def.isEmpty()) outField->setText(def);
+            if (ro) {
+                outField->setStyleSheet(
+                    "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+                    "font-size:11px; padding:4px; border:1px dashed #AAA; border-radius:3px; }");
+            }
             wkDataLay->addWidget(l);
             wkDataLay->addWidget(outField);
         };
-    addWkLine(m_writeKeyFields.eKey, "EKey（16 或 24 bytes / 32 或 48 個 HEX 字元）：",
-        "輸入加密後金鑰 HEX", QString());
+    addWkLine(m_writeKeyFields.eKey, "EKey（16 或 24 bytes，由 CD Key + Exchange Key 自動算出）：",
+        "自動計算，無需手動輸入", QString(), /*ro=*/true);
     addWkLine(m_writeKeyFields.ccode, "CCode（2 bytes / 4 個 HEX 字元）：",
-        "輸入 CCode HEX", QString());
+        "輸入 CCode HEX", QString(), /*ro=*/false);
     addWkLine(m_writeKeyFields.limit, "Limit（4 bytes / 8 個 HEX 字元，預設 FFFFFFFF）：",
-        QString(), "FFFFFFFF");
+        QString(), "FFFFFFFF", /*ro=*/false);
     wkLay->addWidget(wkDataGrp);
 
-    connect(m_writeKeyFields.eKey, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateWriteKeyLc);
+    connect(m_writeKeyFields.cdKey, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateWriteKeyEKey);
+    connect(m_writeKeyFields.exchangeKey, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateWriteKeyEKey);
     connect(m_writeKeyFields.ccode, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateWriteKeyLc);
     connect(m_writeKeyFields.limit, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateWriteKeyLc);
 
@@ -570,7 +591,7 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
     wkLay->addWidget(wkBtn);
     layout->addWidget(wkGrp);
     connect(wkBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamWriteKey);
-    onUpdateWriteKeyLc();   // 初始化 Lc 顯示
+    onUpdateWriteKeyEKey();   // 初始化 EKey / Lc 顯示
 
     // ── ⑦ Store Manufacturer Key ──────────────────────────────────────────
     auto* smkGrp = new QGroupBox("⑦ Store Manufacturer Key", content);
@@ -671,8 +692,13 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     auto* dataForm = new QFormLayout(dataGrp);
     dataForm->setLabelAlignment(Qt::AlignRight);
 
+    // 調整欄位間距，讓排版更緊湊
+    dataForm->setVerticalSpacing(10);
+
     auto mf = [&](QLineEdit*& f, const QString& lbl) {
         f = makeEditField(tab, false);
+        // 設定最大高度，避免輸入框被垂直拉伸變形
+        f->setMaximumHeight(28);
         dataForm->addRow(lbl, f);
         };
     mf(m_nameEdit, "客戶名稱：");
@@ -686,6 +712,9 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     mf(m_pinAEdit, "Pin A：");
     mf(m_pinBEdit, "Pin B：");
     layout->addWidget(dataGrp);
+
+    // 【關鍵修正】在最底部加上彈簧，把上面的元件往上推，避免元件被垂直平分撐開
+    layout->addStretch();
 
     connect(m_loadBtn, &QPushButton::clicked, this, &PageCardOperation::onLoadFile);
     connect(m_clearBtn, &QPushButton::clicked, this, &PageCardOperation::onClearFields);
@@ -1413,6 +1442,25 @@ void PageCardOperation::onIsamGetEncryptedKey()
     }
 }
 
+void PageCardOperation::onUpdateWriteKeyEKey()
+{
+    if (!m_writeKeyFields.eKey) return;
+
+    QString cd = m_writeKeyFields.cdKey
+        ? m_writeKeyFields.cdKey->text().trimmed().remove(' ').toUpper()
+        : QString();
+    QString exch = m_writeKeyFields.exchangeKey
+        ? m_writeKeyFields.exchangeKey->text().trimmed().remove(' ').toUpper()
+        : QString();
+
+    QString eKeyVal;
+    if (!cd.isEmpty() && !exch.isEmpty())
+        eKeyVal = CardUtils::encrypt3DES(cd, exch);   // CD Key 3DES 加密 Exchange Key → EKey
+
+    m_writeKeyFields.eKey->setText(eKeyVal);
+    onUpdateWriteKeyLc();
+}
+
 void PageCardOperation::onUpdateWriteKeyLc()
 {
     if (m_writeKeyFields.lcDisplay) {
@@ -1426,14 +1474,20 @@ void PageCardOperation::onIsamWriteKey()
 {
     if (m_isamHandle == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
 
-    QString apdu = m_writeKeyFields.buildApdu();   // 呼叫後 Lc 顯示會同步更新
-    onUpdateWriteKeyLc();
+    onUpdateWriteKeyEKey();   // 確保 EKey / Lc 為最新值
+    if (m_writeKeyFields.eKey && m_writeKeyFields.eKey->text().isEmpty()) {
+        log("[Write Key] 請先輸入 CD Key 與 Exchange Key 以算出 EKey", true);
+        return;
+    }
+
+    QString apdu = m_writeKeyFields.buildApdu();
     if (apdu.length() < 10) {
         log("[Write Key] APDU 不完整，請確認欄位", true);
         return;
     }
 
     log("====== Write Key ======");
+    log("EKey: " + m_writeKeyFields.eKey->text());
     log("DataIn: " + m_writeKeyFields.buildDataIn());
     bool ok = false;
     QString resp = CardUtils::sendApdu(m_isamHandle, apdu, ok,

@@ -118,7 +118,9 @@ struct WriteKeyFields
     QLineEdit* p2 = nullptr;
     QLineEdit* lcDisplay = nullptr;   // 唯讀，依 DataIn 長度自動計算
 
-    QLineEdit* eKey = nullptr;   // 16/24 bytes
+    QLineEdit* cdKey = nullptr;   // CD Key（用於 3DES 加密 Exchange Key，得出 EKey）
+    QLineEdit* exchangeKey = nullptr;   // Exchange Key（基碼，明文）
+    QLineEdit* eKey = nullptr;   // 唯讀，自動計算 = 3DES(CD Key, Exchange Key)，16/24 bytes
     QLineEdit* ccode = nullptr;   // 2 bytes
     QLineEdit* limit = nullptr;   // 4 bytes，預設 FFFFFFFF
 
@@ -171,6 +173,7 @@ private slots:
     void onIsamGetTerminalAuthCode();
     void onIsamGetEncryptedKey();
     void onIsamWriteKey();
+    void onUpdateWriteKeyEKey();
     void onUpdateWriteKeyLc();
     void onIsamStoreManufacturerKey();
     void onUpdateStoreMfgKeyLc();
