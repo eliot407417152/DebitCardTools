@@ -242,9 +242,9 @@ PageCardOperation::PageCardOperation(SCARDCONTEXT context, const QStringList& re
 
     log(QString("✔ 偵測到 %1 台讀卡機：%2").arg(m_readers.size()).arg(m_readers.join("、")));
     if (m_canMakeMaster)
-        log("讀卡機數量足夠（≥2 台），「LOD / 母卡」製作母卡功能已啟用。");
+        log("讀卡機數量足夠（≥2 台），「製卡發卡流程」製作母卡功能已啟用。");
     else
-        log("讀卡機數量不足 2 台，「LOD / 母卡」製作母卡功能已停用。");
+        log("讀卡機數量不足 2 台，「製卡發卡流程」製作母卡功能已停用。");
 }
 
 PageCardOperation::~PageCardOperation()
@@ -328,8 +328,8 @@ void PageCardOperation::setupUI()
 
     tabWidget->addTab(isamTab, "🔑 ISAM 金鑰");
     tabWidget->addTab(isamCmdTab, "🔧 ISAM 指令");
-    tabWidget->addTab(lodTab, "💳 LOD / 母卡");
     tabWidget->addTab(apduTab, "📡 卡片指令");
+    tabWidget->addTab(lodTab, "📇 製卡發卡流程");
 
     // 讀卡機數量不足 2 台：不提供製作母卡功能
     if (!m_canMakeMaster) {
@@ -338,6 +338,7 @@ void PageCardOperation::setupUI()
         tabWidget->setTabToolTip(lodTabIndex, "目前讀卡機數量不足 2 台，無法製作母卡，請插入第 2 台讀卡機後重新進入。");
         if (m_makeMasterBtn) m_makeMasterBtn->setEnabled(false);
         if (m_authBtn)       m_authBtn->setEnabled(false);
+        if (m_convertBtn)    m_convertBtn->setEnabled(false);
     }
 
     bodyRow->addWidget(tabWidget, 3);
@@ -712,7 +713,7 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 2 — LOD / 母卡
+// Tab 4 — 製卡發卡流程（原 LOD / 母卡，已調整至卡片指令頁籤之後）
 // ─────────────────────────────────────────────────────────────────────────────
 void PageCardOperation::setupLodTab(QWidget* tab)
 {
@@ -752,6 +753,11 @@ void PageCardOperation::setupLodTab(QWidget* tab)
         "QPushButton { background:#6A1B9A; color:white; padding:8px 16px; font-weight:bold; border-radius:4px; }"
         "QPushButton:disabled { background:#CCC; color:#666; }");
 
+    m_convertBtn = new QPushButton("🔄 母卡轉換", tab);
+    m_convertBtn->setStyleSheet(
+        "QPushButton { background:#EF6C00; color:white; padding:8px 16px; font-weight:bold; border-radius:4px; }"
+        "QPushButton:disabled { background:#CCC; color:#666; }");
+
     m_fileLabel = new QLabel("尚未載入 — 或直接手動輸入", tab);
     m_fileLabel->setStyleSheet("color:#888; font-style:italic;");
 
@@ -759,6 +765,7 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     btnRow->addWidget(m_clearBtn);
     btnRow->addWidget(m_authBtn);
     btnRow->addWidget(m_makeMasterBtn);
+    btnRow->addWidget(m_convertBtn);
     btnRow->addWidget(m_fileLabel, 1);
     layout->addLayout(btnRow);
 
@@ -783,6 +790,7 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     mf(m_codeAEdit, "Code A：");
     mf(m_codeBEdit, "Code B：");
     mf(m_exchEdit, "Exchange Code：");
+    mf(m_ccodeEdit, "CCode：");
     mf(m_pinAEdit, "Pin A：");
     mf(m_pinBEdit, "Pin B：");
     layout->addWidget(dataGrp);
@@ -794,6 +802,12 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     connect(m_clearBtn, &QPushButton::clicked, this, &PageCardOperation::onClearFields);
     connect(m_authBtn, &QPushButton::clicked, this, &PageCardOperation::onAuthenticate);
     connect(m_makeMasterBtn, &QPushButton::clicked, this, &PageCardOperation::onMakeMaster);
+    connect(m_convertBtn, &QPushButton::clicked, this, &PageCardOperation::onConvertMaster);
+
+    // 客戶資料欄位如果是手動填入（而非透過載入 LOD），只要 C3 / C1 都有值，
+    // 也要能啟用「製作母卡」按鈕，不強制一定要先載入檔案。
+    connect(m_c3Edit, &QLineEdit::textChanged, this, &PageCardOperation::onCustomerFieldChanged);
+    connect(m_c1Edit, &QLineEdit::textChanged, this, &PageCardOperation::onCustomerFieldChanged);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1640,6 +1654,20 @@ void PageCardOperation::onLoadFile()
     for (const auto& w : warnings) log("⚠️ " + w, true);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 客戶資料欄位變更檢查：不論是載入 LOD 或手動輸入，只要 C3 / C1 都有值
+// 即可啟用「製作母卡」按鈕。
+// ─────────────────────────────────────────────────────────────────────────────
+void PageCardOperation::onCustomerFieldChanged()
+{
+    if (!m_canMakeMaster || !m_makeMasterBtn) return;
+
+    bool hasData = m_c3Edit && !m_c3Edit->text().trimmed().isEmpty()
+        && m_c1Edit && !m_c1Edit->text().trimmed().isEmpty();
+
+    m_makeMasterBtn->setEnabled(hasData);
+}
+
 void PageCardOperation::onAuthenticate()
 {
     if (!m_canMakeMaster) {
@@ -1736,10 +1764,49 @@ void PageCardOperation::onMakeMaster()
     else    QMessageBox::critical(this, "失敗", "❌ 寫入失敗，請查看日誌。");
 }
 
+void PageCardOperation::onConvertMaster()
+{
+    if (!m_canMakeMaster) {
+        log("讀卡機數量不足 2 台，不提供母卡轉換功能。", true);
+        return;
+    }
+
+    QString isamReaderName = m_masterIsamReaderCombo ? m_masterIsamReaderCombo->currentText() : QString();
+    QString cardReaderName = m_masterCardReaderCombo ? m_masterCardReaderCombo->currentText() : QString();
+    if (isamReaderName.isEmpty() || cardReaderName.isEmpty() || isamReaderName == cardReaderName) {
+        QMessageBox::warning(this, "設定錯誤", "請選擇兩台不同的讀卡機（ISAM／母卡）。");
+        return;
+    }
+
+    SCARDHANDLE hIsam = connectReader(isamReaderName);
+    SCARDHANDLE hMaster = connectReader(cardReaderName);
+    if (hIsam == 0 || hMaster == 0) {
+        QMessageBox::critical(this, "連線失敗", "無法連線所選讀卡機，請確認卡片已插好。");
+        return;
+    }
+
+    CustomerData d = collectDataFromFields();
+    if (d.exchangeCode.isEmpty() || d.ccode.isEmpty()) {
+        QMessageBox::warning(this, "資料不足", "請確認 Exchange Code 與 CCode 皆已填寫！");
+        return;
+    }
+    if (d.pinA.isEmpty() || d.pinB.isEmpty()) {
+        QMessageBox::warning(this, "資料不足", "請確認 Pin A / Pin B 皆已填寫！");
+        return;
+    }
+
+    log("====== 開始母卡轉換 ======");
+    MasterCardUpdater mc(hMaster, hIsam);
+    bool ok = mc.convertToBankIsam(d, [this](const QString& m, bool e) { log(m, e); });
+
+    if (ok) QMessageBox::information(this, "完成", "🎉 母卡轉換完成！");
+    else    QMessageBox::critical(this, "失敗", "❌ 母卡轉換失敗，請查看日誌。");
+}
+
 void PageCardOperation::onClearFields()
 {
     for (auto* f : { m_nameEdit, m_c3Edit, m_c3CodeEdit, m_c1Edit, m_c1CodeEdit,
-                    m_codeAEdit, m_codeBEdit, m_exchEdit, m_pinAEdit, m_pinBEdit })
+                    m_codeAEdit, m_codeBEdit, m_exchEdit, m_ccodeEdit, m_pinAEdit, m_pinBEdit })
         f->clear();
     m_loaded = false;
     m_fileLabel->setText("尚未載入 — 或直接手動輸入");
@@ -1946,6 +2013,7 @@ void PageCardOperation::displayData(const CustomerData& d)
     m_codeAEdit->setText(d.codeA);
     m_codeBEdit->setText(d.codeB);
     m_exchEdit->setText(d.exchangeCode);
+    m_ccodeEdit->setText(d.ccode);
     m_pinAEdit->setText(d.pinA);
     m_pinBEdit->setText(d.pinB);
 }
@@ -1961,6 +2029,7 @@ CustomerData PageCardOperation::collectDataFromFields() const
     d.codeA = m_codeAEdit->text().trimmed().toUpper();
     d.codeB = m_codeBEdit->text().trimmed().toUpper();
     d.exchangeCode = m_exchEdit->text().trimmed().toUpper();
+    d.ccode = m_ccodeEdit->text().trimmed().toUpper();
     d.pinA = m_pinAEdit->text().trimmed().toUpper();
     d.pinB = m_pinBEdit->text().trimmed().toUpper();
     return d;

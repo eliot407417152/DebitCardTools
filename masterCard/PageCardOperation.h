@@ -139,13 +139,13 @@ struct StoreManufacturerKeyFields
 //【已依需求調整】
 //   1. 不再由建構子傳入固定的 ISAM / 母卡 SCARDHANDLE，改傳入
 //      SCARDCONTEXT + 偵測到的讀卡機名稱清單 (QStringList)。
-//   2. 「ISAM 金鑰」「ISAM 指令」兩個頁籤、以及「LOD / 母卡」頁籤，
+//   2. 「ISAM 金鑰」「ISAM 指令」兩個頁籤、以及「製卡發卡流程」頁籤，
 //      現在都各自提供「讀卡機選擇」下拉選單（比照原本「卡片指令」頁籤的
 //      「發送對象」下拉選單做法），使用者可自行選擇要用哪一台讀卡機。
 //      實際連線 (SCardConnect) 改為「使用到某台讀卡機時才連線」，並快取
 //      連線代碼，避免重複連線。
 //   3. 「製作母卡」需要選擇兩台不同的讀卡機；若偵測到的讀卡機不足兩台，
-//      「LOD / 母卡」頁籤會直接停用，避免誤觸。
+//      「製卡發卡流程」頁籤會直接停用，避免誤觸。
 // ─────────────────────────────────────────────────────────────────────────────
 class PageCardOperation : public QWidget
 {
@@ -178,11 +178,13 @@ private slots:
     void onUpdateStoreMfgKeyLc();
     void onIsamStoreManufacturerKey();
 
-    // LOD / 母卡 Tab
+    // 製卡發卡流程 Tab
     void onLoadFile();
     void onClearFields();
     void onAuthenticate();
     void onMakeMaster();
+    void onConvertMaster();
+    void onCustomerFieldChanged();
 
     // 卡片指令 Tab
     void onCreateFile();
@@ -254,13 +256,14 @@ private:
     WriteKeyFields m_writeKeyFields;
     StoreManufacturerKeyFields m_storeMfgKeyFields;
 
-    // ── LOD / 母卡 Tab ──────────────────────────────────────────────────────
+    // ── 製卡發卡流程 Tab ────────────────────────────────────────────────────
     QComboBox* m_masterIsamReaderCombo = nullptr;   // 製作母卡：ISAM 讀卡機
     QComboBox* m_masterCardReaderCombo = nullptr;   // 製作母卡：母卡 讀卡機
     QPushButton* m_loadBtn = nullptr;
     QPushButton* m_clearBtn = nullptr;
     QPushButton* m_makeMasterBtn = nullptr;
     QPushButton* m_authBtn = nullptr;
+    QPushButton* m_convertBtn = nullptr;   // 母卡轉換
     QLabel* m_fileLabel = nullptr;
 
     QLineEdit* m_nameEdit = nullptr;
@@ -271,6 +274,7 @@ private:
     QLineEdit* m_codeAEdit = nullptr;
     QLineEdit* m_codeBEdit = nullptr;
     QLineEdit* m_exchEdit = nullptr;
+    QLineEdit* m_ccodeEdit = nullptr;       // 母卡轉換用 CCode（手動填入）
     QLineEdit* m_pinAEdit = nullptr;
     QLineEdit* m_pinBEdit = nullptr;
 

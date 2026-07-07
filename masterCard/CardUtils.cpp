@@ -125,6 +125,7 @@ QString CardUtils::lookupIsamCdKey(const QString& responseHex)
     if (code == "C396") return "010203040506070811121314151617182122232425262728";
     if (code == "E427") return "EF295380F1029C073D581C021FB39DCE10B50F439041E61F";
     if (code == "8CA6") return "000000000000000000000000000000000000000000000000";
+    if (code == "BE0A") return "000000000000000011111111111111112222222222222222";
 
     return {};   // 未知型別 → 回傳空字串
 }

@@ -19,6 +19,7 @@ struct CustomerData {
     QString c3, c3Code;
     QString c1, c1Code;
     QString exchangeCode;
+    QString ccode;          // 母卡轉換用 CCode（手動填入）
     QString codeA, codeB;
     QString pinA, pinB;
 

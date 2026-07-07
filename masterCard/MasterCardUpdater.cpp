@@ -260,6 +260,131 @@ bool MasterCardUpdater::writeDEF(const QString& label,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 母卡轉換 — 拿製作好的母卡，跟銀行卡的 ISAM 做母卡轉換
+// ─────────────────────────────────────────────────────────────────────────────
+bool MasterCardUpdater::convertToBankIsam(const CustomerData& data, const LogFn& log)
+{
+    if (m_masterHandle == 0 || m_isamHandle == 0) {
+        logErr(log, "Error: 卡片控制代碼無效（Master 或 ISAM 為 0）");
+        return false;
+    }
+
+    logInfo(log, "====== 🔄 [母卡轉換] 啟動 ======");
+
+    // 1-a. Select ISAM Object（CLA:82 INS:A4 P1:00 P2:00 Lc:02 DataIn:9500 Le:0E）
+    if (!sendCheck(m_isamHandle, "82A400000295000E", "Select ISAM Object", log)) return false;
+
+    // 1-b. Get Key Check Code（ISAM）：取得 CD Key 對照用回應
+    QString kccResp;
+    if (!sendCheck(m_isamHandle, "8207000007", "Get Key Check Code", log, kccResp)) return false;
+
+    QString cdKey = CardUtils::lookupIsamCdKey(kccResp);
+    if (cdKey.isEmpty()) {
+        logErr(log, QString("Error: 無法對照 CD Key 類型 (回應前4碼: %1)").arg(kccResp.left(4)));
+        return false;
+    }
+    logInfo(log, "✔ CD Key 對照成功。");
+
+    // 1-c. 用 CD Key 對 Exchange Key 做 3DES 加密，取得 EKey
+    QString exchangeKey = data.exchangeCode.trimmed().toUpper();
+    if (exchangeKey.isEmpty()) {
+        logErr(log, "Error: 客戶資料缺少 Exchange Code");
+        return false;
+    }
+    QString eKey = CardUtils::encrypt3DES(cdKey, exchangeKey);
+    if (eKey.isEmpty()) {
+        logErr(log, "Error: Exchange Key 加密失敗（請確認 CD Key / Exchange Code 格式）");
+        return false;
+    }
+    logInfo(log, "✔ EKey 計算完成：" + eKey);
+
+    // 1-d. Write Key（ISAM）：DataIn = EKey + CCode + Limit(FFFFFFFF)
+    QString ccode = data.ccode.trimmed().toUpper();
+    if (ccode.isEmpty()) {
+        logErr(log, "Error: 客戶資料缺少 CCode");
+        return false;
+    }
+    QString wkData = eKey + ccode + "FFFFFFFF";
+    QString wkLc = QString("%1").arg(wkData.length() / 2, 2, 16, QChar('0')).toUpper();
+    // P1(KID)=20、P2(KT)=08 為固定值
+    QString wkApdu = "8203" "20" "08" + wkLc + wkData;
+    if (!sendCheck(m_isamHandle, wkApdu, "Write Key", log)) return false;
+    logInfo(log, "✔ Write Key 成功。");
+
+    // 2. Verify PIN A（母卡，P2 = 01 左移 3 位 = 08）
+    QByteArray pinABytes = CardUtils::hexToBytes(data.pinA);
+    pinABytes = pinABytes.leftJustified(8, static_cast<char>(0xFF)).left(8);
+    QString pinAApdu = "0020000808" + CardUtils::bytesToHex(pinABytes);
+    if (!sendCheck(m_masterHandle, pinAApdu, "Verify PIN A", log)) return false;
+    logInfo(log, "✔ PIN A 驗證成功。");
+
+    // 3. Verify PIN B（母卡，P2 = 02 左移 3 位 = 10）
+    QByteArray pinBBytes = CardUtils::hexToBytes(data.pinB);
+    pinBBytes = pinBBytes.leftJustified(8, static_cast<char>(0xFF)).left(8);
+    QString pinBApdu = "0020001008" + CardUtils::bytesToHex(pinBBytes);
+    if (!sendCheck(m_masterHandle, pinBApdu, "Verify PIN B", log)) return false;
+    logInfo(log, "✔ PIN B 驗證成功。");
+
+    // 4~7. 0001（KT=03, KID=11）與 0002（KT=04, KID=12）
+    if (!convertOneKeyBlock("0001", "03", "11", log)) return false;
+    if (!convertOneKeyBlock("0002", "04", "12", log)) return false;
+
+    logInfo(log, "🎉 ====== ✔ 母卡轉換完成 ======");
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 母卡轉換 — 單一金鑰區塊（0001 / 0002）
+//   Select EFID(母卡) → Read Record r01 / r02(母卡) → Store Manufacturer Key(ISAM)
+// ─────────────────────────────────────────────────────────────────────────────
+bool MasterCardUpdater::convertOneKeyBlock(const QString& efid,
+    const QString& kt,
+    const QString& storeKeyKid,
+    const LogFn& log)
+{
+    QString efidU = efid.toUpper();
+
+    // Select EFID（母卡）
+    if (!sendCheck(m_masterHandle, "00A4020002" + efidU,
+        "[" + efidU + "] Select File", log)) return false;
+
+    // Read Record r01（母卡）
+    QString r1Resp;
+    if (!sendCheck(m_masterHandle, "00B2010400",
+        "[" + efidU + "] Read Record r01", log, r1Resp)) return false;
+    QString r1Data = r1Resp.left(qMax(0, r1Resp.length() - 4));
+    if (r1Data.length() <= 4) {
+        logErr(log, "Error: [" + efidU + "] Read Record r01 資料長度不足 (" + r1Data + ")");
+        return false;
+    }
+    // 前 2 碼(ID) + 2 碼(長度) 為 header，之後才是實際 EKey 內容
+    QString eKeyExtracted = r1Data.mid(4);
+    logInfo(log, "✔ [" + efidU + "] r01 取得 EKey：" + eKeyExtracted);
+
+    // Read Record r02（母卡）
+    QString r2Resp;
+    if (!sendCheck(m_masterHandle, "00B2020400",
+        "[" + efidU + "] Read Record r02", log, r2Resp)) return false;
+    QString r2Data = r2Resp.left(qMax(0, r2Resp.length() - 4));
+    if (r2Data.length() <= 4) {
+        logErr(log, "Error: [" + efidU + "] Read Record r02 資料長度不足 (" + r2Data + ")");
+        return false;
+    }
+    QString ccodeExtracted = r2Data.mid(4);
+    logInfo(log, "✔ [" + efidU + "] r02 取得 CCode：" + ccodeExtracted);
+
+    // Store Manufacturer Key（ISAM）：CLA:82 INS:09 P1:ExKID(20) P2:KID Data = KT+EKey+CCode+Limit
+    QString smkData = kt.toUpper() + eKeyExtracted + ccodeExtracted + "FFFFFFFF";
+    QString smkLc = QString("%1").arg(smkData.length() / 2, 2, 16, QChar('0')).toUpper();
+    QString smkApdu = "820920" + storeKeyKid.toUpper().rightJustified(2, '0').right(2) + smkLc + smkData;
+    if (!sendCheck(m_isamHandle, smkApdu,
+        "[" + efidU + "] Store Manufacturer Key", log)) return false;
+
+    logInfo(log, "✔ [" + efidU + "] Store Manufacturer Key 完成。");
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 組 Create File DataIn (固定 16 bytes = 32 HEX)
 // ─────────────────────────────────────────────────────────────────────────────
 QString MasterCardUpdater::buildCreateDataIn(const QString& efid,
