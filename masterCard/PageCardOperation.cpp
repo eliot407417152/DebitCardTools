@@ -20,6 +20,7 @@
 #include <QDateTime>
 #include <QScrollArea>
 #include <QRadioButton>
+#include <QFile>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ApduFields::buildApdu
@@ -497,6 +498,16 @@ void PageCardOperation::setupUI()
     // 右側日誌
     auto* logGrp = new QGroupBox("通訊日誌");
     auto* logLay = new QVBoxLayout(logGrp);
+
+    auto* logBtnRow = new QHBoxLayout();
+    m_exportLogBtn = new QPushButton("💾 匯出日誌", logGrp);
+    m_exportLogBtn->setStyleSheet(
+        "QPushButton { background:#455A64; color:white; padding:6px 12px; "
+        "font-weight:bold; border-radius:4px; }");
+    logBtnRow->addStretch();
+    logBtnRow->addWidget(m_exportLogBtn);
+    logLay->addLayout(logBtnRow);
+
     m_logEdit = new QTextEdit(this);
     m_logEdit->setReadOnly(true);
     m_logEdit->setStyleSheet(
@@ -504,6 +515,8 @@ void PageCardOperation::setupUI()
         "font-family:'Courier New',monospace; font-size:11px;");
     logLay->addWidget(m_logEdit);
     bodyRow->addWidget(logGrp, 2);
+
+    connect(m_exportLogBtn, &QPushButton::clicked, this, &PageCardOperation::onExportLog);
 
     mainLayout->addLayout(bodyRow);
 }
@@ -548,6 +561,26 @@ void PageCardOperation::setupIsamTab(QWidget* tab)
     makeLbl(m_isamC1CodeLbl, "C1 Code：");
     layout->addWidget(infoGrp);
 
+    // 查看 ISAM — 直接讀取卡片目前的 C3 / C1 對照碼（不需先選擇銀行）
+    auto* viewGrp = new QGroupBox("目前卡片 ISAM 金鑰對照碼（讀取自 ISAM）");
+    auto* viewForm = new QFormLayout(viewGrp);
+    auto makeViewLbl = [&](QLabel*& lbl, const QString& row) {
+        lbl = new QLabel("—", tab);
+        lbl->setStyleSheet(
+            "QLabel { background:#EEEEEE; color:#333; font-family:'Courier New'; "
+            "padding:4px 8px; border:1px solid #CCC; border-radius:3px; }");
+        viewForm->addRow(row, lbl);
+        };
+    makeViewLbl(m_isamViewC3Lbl, "C3 對照碼：");
+    makeViewLbl(m_isamViewC1Lbl, "C1 對照碼：");
+    layout->addWidget(viewGrp);
+
+    m_viewIsamBtn = new QPushButton("🔎 查看 ISAM", tab);
+    m_viewIsamBtn->setStyleSheet(
+        "QPushButton { background:#37474F; color:white; padding:10px; "
+        "font-weight:bold; font-size:13px; border-radius:4px; }");
+    layout->addWidget(m_viewIsamBtn);
+
     m_updateIsamBtn = new QPushButton("⚡ 寫入 ISAM 金鑰", tab);
     m_updateIsamBtn->setStyleSheet(
         "QPushButton { background:#E65100; color:white; padding:10px; "
@@ -567,6 +600,7 @@ void PageCardOperation::setupIsamTab(QWidget* tab)
 
     connect(m_isamKeyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
         this, &PageCardOperation::onIsamKeySelected);
+    connect(m_viewIsamBtn, &QPushButton::clicked, this, &PageCardOperation::onViewIsam);
     connect(m_updateIsamBtn, &QPushButton::clicked, this, &PageCardOperation::onUpdateIsam);
     connect(m_checkIsamKeyBtn, &QPushButton::clicked, this, &PageCardOperation::onCheckIsamKey);
 }
@@ -1901,6 +1935,53 @@ void PageCardOperation::onIsamKeySelected(int /*index*/)
     }
 }
 
+void PageCardOperation::onViewIsam()
+{
+    SCARDHANDLE hIsam = connectReader(m_isamKeyReaderCombo ? m_isamKeyReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+
+    log("====== 查看 ISAM ======");
+
+    auto logFn = [this](const QString& msg, bool err) { log(msg, err); };
+
+    // 1. Select ISAM Object
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(hIsam, "82A400000295020E", ok, logFn);
+    QString sw = resp.right(4);
+    if (!ok || sw != "9000") {
+        log(QString("Error: [Select ISAM Object] 失敗 (SW=%1)").arg(sw), true);
+        QMessageBox::critical(this, "卡片錯誤", "查看 ISAM 失敗，請查看日誌。");
+        return;
+    }
+
+    // 2. 查詢 C3 對照碼
+    QString c3Resp = CardUtils::sendApdu(hIsam, "8207050007", ok, logFn);
+    QString c3Sw = c3Resp.right(4);
+    if (!ok || c3Sw != "9000") {
+        log(QString("Error: [查詢 C3 對照碼] 失敗 (SW=%1)").arg(c3Sw), true);
+        QMessageBox::critical(this, "卡片錯誤", "查看 ISAM 失敗，請查看日誌。");
+        return;
+    }
+    QString c3Check = c3Resp.left(4);
+
+    // 3. 查詢 C1 對照碼
+    QString c1Resp = CardUtils::sendApdu(hIsam, "8207060007", ok, logFn);
+    QString c1Sw = c1Resp.right(4);
+    if (!ok || c1Sw != "9000") {
+        log(QString("Error: [查詢 C1 對照碼] 失敗 (SW=%1)").arg(c1Sw), true);
+        QMessageBox::critical(this, "卡片錯誤", "查看 ISAM 失敗，請查看日誌。");
+        return;
+    }
+    QString c1Check = c1Resp.left(4);
+
+    if (m_isamViewC3Lbl) m_isamViewC3Lbl->setText(c3Check);
+    if (m_isamViewC1Lbl) m_isamViewC1Lbl->setText(c1Check);
+
+    log(QString("✔ 查看 ISAM 完成：C3 對照碼=%1  C1 對照碼=%2").arg(c3Check, c1Check));
+    QMessageBox::information(this, "查看完成",
+        QString("目前卡片 ISAM 金鑰對照碼：\nC3：%1\nC1：%2").arg(c3Check, c1Check));
+}
+
 void PageCardOperation::onUpdateIsam()
 {
     int id = m_isamKeyCombo->currentData().toInt();
@@ -2862,4 +2943,30 @@ void PageCardOperation::log(const QString& msg, bool isError)
     QString color = isError ? "#FF3333" : "#00FF66";
     m_logEdit->append(QString("<font color=\"%1\">[%2] %3</font>")
         .arg(color, QDateTime::currentDateTime().toString("hh:mm:ss"), msg));
+}
+
+void PageCardOperation::onExportLog()
+{
+    if (!m_logEdit || m_logEdit->toPlainText().trimmed().isEmpty()) {
+        QMessageBox::information(this, "匯出日誌", "目前沒有日誌內容可以匯出。");
+        return;
+    }
+
+    QString defaultName = QString("card_log_%1.txt")
+        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"));
+
+    QString path = QFileDialog::getSaveFileName(this, "匯出日誌",
+        defaultName, "文字檔 (*.txt);;所有檔案 (*.*)");
+    if (path.isEmpty()) return;   // 使用者取消
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "匯出失敗", "無法寫入檔案，請確認路徑或權限。");
+        return;
+    }
+    file.write(m_logEdit->toPlainText().toUtf8());
+    file.close();
+
+    log("✔ 日誌已匯出：" + path);
+    QMessageBox::information(this, "匯出完成", "日誌已成功匯出至：\n" + path);
 }

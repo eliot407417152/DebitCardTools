@@ -244,6 +244,7 @@ signals:
 private slots:
     // ISAM 金鑰 Tab
     void onIsamKeySelected(int index);
+    void onViewIsam();
     void onUpdateIsam();
     void onCheckIsamKey();
 
@@ -291,6 +292,7 @@ private slots:
     void onUpdateRecordCiphered();
     void onReadBinary();
     void onGenerateRandomCard();
+    void onExportLog();
 
 private:
     void setupUI();
@@ -338,6 +340,9 @@ private:
     QComboBox* m_isamKeyCombo = nullptr;
     QLabel* m_isamC3CodeLbl = nullptr;
     QLabel* m_isamC1CodeLbl = nullptr;
+    QPushButton* m_viewIsamBtn = nullptr;
+    QLabel* m_isamViewC3Lbl = nullptr;   // 查看 ISAM：讀取自卡片的 C3 對照碼
+    QLabel* m_isamViewC1Lbl = nullptr;   // 查看 ISAM：讀取自卡片的 C1 對照碼
     QPushButton* m_updateIsamBtn = nullptr;
     QPushButton* m_checkIsamKeyBtn = nullptr;
 
@@ -396,4 +401,5 @@ private:
 
     // ── 共用 ────────────────────────────────────────────────────────────────
     QTextEdit* m_logEdit = nullptr;
+    QPushButton* m_exportLogBtn = nullptr;
 };
