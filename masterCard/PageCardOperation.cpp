@@ -909,10 +909,10 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
     sskLay->addWidget(sskDivLbl);
     sskLay->addWidget(m_setSessionKeyIsamFields.divData);
 
-    auto* sskR2Lbl = new QLabel("R2（ICC 產生之 Random Number，8 bytes）：", sskGrp);
+    auto* sskR2Lbl = new QLabel("R2（卡片指令 Set Session Key 回應之 R2，8 bytes）：", sskGrp);
     sskR2Lbl->setStyleSheet("font-weight:bold; font-size:11px;");
     m_setSessionKeyIsamFields.r2 = makeEditField(sskGrp, false);
-    m_setSessionKeyIsamFields.r2->setPlaceholderText("輸入 16 個 HEX 字元（8 bytes）");
+    m_setSessionKeyIsamFields.r2->setPlaceholderText("輸入卡片指令 Set Session Key 回應之 R2（16 個 HEX 字元 / 8 bytes）");
     sskLay->addWidget(sskR2Lbl);
     sskLay->addWidget(m_setSessionKeyIsamFields.r2);
 
@@ -2803,8 +2803,8 @@ void PageCardOperation::onSetSessionKeyCard()
     QString sw = resp.right(4);
     QString data = resp.left(qMax(0, resp.length() - 4));
     if (sw == "9000") {
-        log("✔ Set Session Key 成功 SW=9000");
-        log("ICC 回應資料：" + (data.isEmpty() ? QString("(空)") : data));
+        log("✔ Set Session Key（卡片）成功 SW=9000");
+        log("R2（回應資料，可填入 ISAM 指令 Set Session Key 的 R2 欄位）：" + (data.isEmpty() ? QString("(空)") : data));
     }
     else {
         log("⚠️ Set Session Key SW=" + sw, true);

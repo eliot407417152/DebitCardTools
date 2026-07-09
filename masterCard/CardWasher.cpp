@@ -80,11 +80,13 @@ bool CardWasher::execute(const LogFn& log)
     // 7. Set Session Key（卡片）(SK)：00 84 00 80 Lc(自動) DataIn=6 Le=08
     QString sskCardLc = QString("%1").arg(randIsamData.length() / 2, 2, 16, QChar('0')).toUpper();
     QString sskCardApdu = "00840080" + sskCardLc + randIsamData + "08";
-    if (!sendCheck(m_cardHandle, sskCardApdu, "7. Set Session Key（卡片）", log)) return false;
-    logInfo(log, "✔ 7. Set Session Key（卡片）成功。");
+    QString sskCardResp;
+    if (!sendCheck(m_cardHandle, sskCardApdu, "7. Set Session Key（卡片）", log, sskCardResp)) return false;
+    QString sskCardData = sskCardResp.left(qMax(0, sskCardResp.length() - 4));
+    logInfo(log, "✔ 7. Set Session Key（卡片）成功：" + sskCardData);
 
-    // 8. Set Session Key（ISAM）(SK)：82 0A 12 00 Lc(自動) DataIn=1+2
-    QString sskIsamData = readBinData + randCardData;
+    // 8. Set Session Key（ISAM）(SK)：82 0A 12 00 Lc(自動) DataIn=1.Read Binary回應+7.Set Session Key(卡片)回應
+    QString sskIsamData = readBinData + sskCardData;
     QString sskIsamLc = QString("%1").arg(sskIsamData.length() / 2, 2, 16, QChar('0')).toUpper();
     QString sskIsamApdu = "820A1200" + sskIsamLc + sskIsamData;
     if (!sendCheck(m_isamHandle, sskIsamApdu, "8. Set Session Key（ISAM）", log)) return false;
