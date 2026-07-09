@@ -864,6 +864,7 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
     addCol(sskGrp, sskRow, m_setSessionKeyIsamFields.p1, "P1（KID）", "", 2, false);
     addCol(sskGrp, sskRow, m_setSessionKeyIsamFields.p2, "P2", "00", 2, true);
     addCol(sskGrp, sskRow, m_setSessionKeyIsamFields.lcDisplay, "Lc（DL+8）", "", 2, true);
+    addCol(sskGrp, sskRow, m_setSessionKeyIsamFields.le, "Le", "--", 2, true);
     sskRow->addStretch();
     sskLay->addLayout(sskRow);
 
@@ -880,6 +881,15 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
     m_setSessionKeyIsamFields.r2->setPlaceholderText("輸入 16 個 HEX 字元（8 bytes）");
     sskLay->addWidget(sskR2Lbl);
     sskLay->addWidget(m_setSessionKeyIsamFields.r2);
+
+    auto* sskDataLbl = new QLabel("DATA（= Div-Data + R2，自動組合）：", sskGrp);
+    sskDataLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_setSessionKeyIsamFields.dataDisplay = makeEditField(sskGrp, true);
+    m_setSessionKeyIsamFields.dataDisplay->setStyleSheet(
+        "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+        "font-size:11px; padding:4px; border:1px dashed #AAA; border-radius:3px; }");
+    sskLay->addWidget(sskDataLbl);
+    sskLay->addWidget(m_setSessionKeyIsamFields.dataDisplay);
 
     auto* sskHint = new QLabel("Lc = DL + 8（依 Div-Data + R2 總長度自動計算）。Le：--（無）。", sskGrp);
     sskHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
@@ -2150,10 +2160,14 @@ void PageCardOperation::onIsamStoreManufacturerKey()
 
 void PageCardOperation::onUpdateSetSessionKeyLc()
 {
+    QString data = m_setSessionKeyIsamFields.buildDataIn();
+
     if (m_setSessionKeyIsamFields.lcDisplay) {
-        QString data = m_setSessionKeyIsamFields.buildDataIn();
         m_setSessionKeyIsamFields.lcDisplay->setText(
             QString("%1").arg(data.length() / 2, 2, 16, QChar('0')).toUpper());
+    }
+    if (m_setSessionKeyIsamFields.dataDisplay) {
+        m_setSessionKeyIsamFields.dataDisplay->setText(data);
     }
 }
 

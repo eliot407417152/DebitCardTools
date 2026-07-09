@@ -158,9 +158,11 @@ struct SetSessionKeyIsamFields
     QLineEdit* p1 = nullptr;      // KID
     QLineEdit* p2 = nullptr;      // 00
     QLineEdit* lcDisplay = nullptr;
+    QLineEdit* le = nullptr;      // --（固定無 Le，僅顯示用）
 
     QLineEdit* divData = nullptr; // Div-Data（多樣化資料，可變長度）
     QLineEdit* r2 = nullptr;      // R2（ICC 產生之 Random Number，8 bytes）
+    QLineEdit* dataDisplay = nullptr; // DATA = Div-Data + R2（自動組合、唯讀顯示）
 
     QString buildDataIn() const;
     QString buildApdu() const;
