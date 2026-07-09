@@ -84,6 +84,22 @@ struct VerifyPinFields
     QString buildApdu() const;
 };
 
+// 卡片指令 — Terminal Authentication 專用：P2 由 Kq 邏輯左移 3 位自動運算（比照 Verify Pin），
+// 但 DATA 為 16 bytes（32 HEX），Lc 隨之固定為 10h
+struct TerminalAuthFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* pq = nullptr;
+    QLineEdit* p2Display = nullptr;
+    QLineEdit* lc = nullptr;
+    QLineEdit* pin = nullptr;   // DATA（16 bytes / 32 HEX）
+
+    QString computedP2() const;
+    QString buildApdu() const;
+};
+
 // Read Record / Read All Record 共用
 struct ReadRecordFields
 {
@@ -133,6 +149,68 @@ struct StoreManufacturerKeyFields
     QString buildApdu() const;
 };
 
+// ISAM 指令頁 — Set Session Key（Div-Data 可變長度 + R2 固定 8 bytes，Lc = DL + 8）
+struct SetSessionKeyIsamFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;      // KID
+    QLineEdit* p2 = nullptr;      // 00
+    QLineEdit* lcDisplay = nullptr;
+
+    QLineEdit* divData = nullptr; // Div-Data（多樣化資料，可變長度）
+    QLineEdit* r2 = nullptr;      // R2（ICC 產生之 Random Number，8 bytes）
+
+    QString buildDataIn() const;
+    QString buildApdu() const;
+};
+
+// ISAM 指令頁 — Get Diversify Key with Session Key（Lc = DL，Le 固定 00）
+struct DiversifyKeyFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;      // KID（WK 或 SK）
+    QLineEdit* p2 = nullptr;      // 00
+    QLineEdit* lcDisplay = nullptr;
+    QLineEdit* le = nullptr;      // 00（固定）
+
+    QLineEdit* divData = nullptr; // Div-Data（多樣化資料，可變長度）
+
+    QString buildApdu() const;
+};
+
+// 卡片指令 — Set Session Key（P2 由 Kq 邏輯左移三位運算，比照 Verify Pin 作法）
+struct SetSessionKeyCardFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* pq = nullptr;
+    QLineEdit* p2Display = nullptr;
+    QLineEdit* lc = nullptr;
+    QLineEdit* r1 = nullptr;
+    QLineEdit* le = nullptr;
+
+    QString computedP2() const;
+    QString buildApdu() const;
+};
+
+// 卡片指令 — Update Record Ciphered (Write Record Ciphered)
+//   Lc 依 DATA 長度自動計算（08/10/18），DATA 為自行輸入
+struct UpdateRecordCipheredFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* p2 = nullptr;
+    QLineEdit* lcDisplay = nullptr;
+
+    QLineEdit* data = nullptr;   // DATA（自行輸入）
+
+    QString buildApdu() const;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PageCardOperation
 //
@@ -177,6 +255,11 @@ private slots:
     void onIsamWriteKey();
     void onUpdateStoreMfgKeyLc();
     void onIsamStoreManufacturerKey();
+    void onUpdateSetSessionKeyLc();
+    void onIsamSetSessionKey();
+    void onUpdateDiversifyKeyLc();
+    void onIsamGetDiversifyKey();
+    void onIsamGetWorkingKey();
 
     // 製卡發卡流程 Tab
     void onLoadFile();
@@ -196,6 +279,14 @@ private slots:
     void onVerifyPin();
     void onReadRecord();
     void onReadAllRecord();
+    void onUpdateTerminalAuthP2();
+    void onTerminalAuthentication();
+    void onUpdateSessionKeyCardP2();
+    void onSetSessionKeyCard();
+    void onUpdateRecordCipheredLc();
+    void onUpdateRecordCiphered();
+    void onReadBinary();
+    void onGenerateRandomCard();
 
 private:
     void setupUI();
@@ -255,6 +346,9 @@ private:
     IsamSimpleFields m_isamEncKeyFields;
     WriteKeyFields m_writeKeyFields;
     StoreManufacturerKeyFields m_storeMfgKeyFields;
+    SetSessionKeyIsamFields m_setSessionKeyIsamFields;
+    DiversifyKeyFields m_diversifyKeyFields;
+    IsamSimpleFields m_workingKeyFields;
 
     // ── 製卡發卡流程 Tab ────────────────────────────────────────────────────
     QComboBox* m_masterIsamReaderCombo = nullptr;   // 製作母卡：ISAM 讀卡機
@@ -289,6 +383,11 @@ private:
     VerifyPinFields m_verifyPinFields;
     ReadRecordFields m_readRecordFields;
     ReadRecordFields m_readAllRecordFields;
+    TerminalAuthFields m_terminalAuthFields;   // Terminal Authentication（P1固定/Kq左移3位/Lc自動/Data=16bytes）
+    SetSessionKeyCardFields m_setSessionKeyCardFields;
+    UpdateRecordCipheredFields m_updateRecordCipheredFields;
+    IsamSimpleFields m_readBinaryFields;   // Read Binary：CLA/INS/P1 固定，P2/Le 自行輸入
+    IsamSimpleFields m_generateRandomCardFields;   // Generate Random Number：CLA/INS/P1/P2/Le 固定
 
     // ── 共用 ────────────────────────────────────────────────────────────────
     QTextEdit* m_logEdit = nullptr;
