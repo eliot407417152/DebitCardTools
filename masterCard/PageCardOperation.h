@@ -7,6 +7,7 @@
 #include <winscard.h>
 #include "CardUtils.h"
 #include "IsamKeyChecker.h"   // CustomerData / KeyCheckResult
+#include "CardWasher.h"       // 洗卡
 
 class QLineEdit;
 class QPushButton;
@@ -268,6 +269,7 @@ private slots:
     void onMakeMaster();
     void onConvertMaster();
     void onCustomerFieldChanged();
+    void onWashCard();
 
     // 卡片指令 Tab
     void onCreateFile();
@@ -358,6 +360,7 @@ private:
     QPushButton* m_makeMasterBtn = nullptr;
     QPushButton* m_authBtn = nullptr;
     QPushButton* m_convertBtn = nullptr;   // 母卡轉換
+    QPushButton* m_washCardBtn = nullptr;  // 洗卡
     QLabel* m_fileLabel = nullptr;
 
     QLineEdit* m_nameEdit = nullptr;

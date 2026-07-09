@@ -489,6 +489,7 @@ void PageCardOperation::setupUI()
         if (m_makeMasterBtn) m_makeMasterBtn->setEnabled(false);
         if (m_authBtn)       m_authBtn->setEnabled(false);
         if (m_convertBtn)    m_convertBtn->setEnabled(false);
+        if (m_washCardBtn)  m_washCardBtn->setEnabled(false);
     }
 
     bodyRow->addWidget(tabWidget, 3);
@@ -1009,6 +1010,11 @@ void PageCardOperation::setupLodTab(QWidget* tab)
         "QPushButton { background:#EF6C00; color:white; padding:8px 16px; font-weight:bold; border-radius:4px; }"
         "QPushButton:disabled { background:#CCC; color:#666; }");
 
+    m_washCardBtn = new QPushButton("🧼 洗卡", tab);
+    m_washCardBtn->setStyleSheet(
+        "QPushButton { background:#00838F; color:white; padding:8px 16px; font-weight:bold; border-radius:4px; }"
+        "QPushButton:disabled { background:#CCC; color:#666; }");
+
     m_fileLabel = new QLabel("尚未載入 — 或直接手動輸入", tab);
     m_fileLabel->setStyleSheet("color:#888; font-style:italic;");
 
@@ -1017,6 +1023,7 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     btnRow->addWidget(m_authBtn);
     btnRow->addWidget(m_makeMasterBtn);
     btnRow->addWidget(m_convertBtn);
+    btnRow->addWidget(m_washCardBtn);
     btnRow->addWidget(m_fileLabel, 1);
     layout->addLayout(btnRow);
 
@@ -1054,6 +1061,7 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     connect(m_authBtn, &QPushButton::clicked, this, &PageCardOperation::onAuthenticate);
     connect(m_makeMasterBtn, &QPushButton::clicked, this, &PageCardOperation::onMakeMaster);
     connect(m_convertBtn, &QPushButton::clicked, this, &PageCardOperation::onConvertMaster);
+    connect(m_washCardBtn, &QPushButton::clicked, this, &PageCardOperation::onWashCard);
 
     // 客戶資料欄位如果是手動填入（而非透過載入 LOD），只要 C3 / C1 都有值，
     // 也要能啟用「製作母卡」按鈕，不強制一定要先載入檔案。
@@ -2416,6 +2424,35 @@ void PageCardOperation::onConvertMaster()
 
     if (ok) QMessageBox::information(this, "完成", "🎉 母卡轉換完成！");
     else    QMessageBox::critical(this, "失敗", "❌ 母卡轉換失敗，請查看日誌。");
+}
+
+void PageCardOperation::onWashCard()
+{
+    if (!m_canMakeMaster) {
+        log("讀卡機數量不足 2 台，不提供洗卡功能。", true);
+        return;
+    }
+
+    QString isamReaderName = m_masterIsamReaderCombo ? m_masterIsamReaderCombo->currentText() : QString();
+    QString cardReaderName = m_masterCardReaderCombo ? m_masterCardReaderCombo->currentText() : QString();
+    if (isamReaderName.isEmpty() || cardReaderName.isEmpty() || isamReaderName == cardReaderName) {
+        QMessageBox::warning(this, "設定錯誤", "請選擇兩台不同的讀卡機（ISAM／卡片）。");
+        return;
+    }
+
+    SCARDHANDLE hIsam = connectReader(isamReaderName);
+    SCARDHANDLE hCard = connectReader(cardReaderName);
+    if (hIsam == 0 || hCard == 0) {
+        QMessageBox::critical(this, "連線失敗", "無法連線所選讀卡機，請確認卡片已插好。");
+        return;
+    }
+
+    log("====== 開始洗卡 ======");
+    CardWasher washer(hCard, hIsam);
+    bool ok = washer.execute([this](const QString& m, bool e) { log(m, e); });
+
+    if (ok) QMessageBox::information(this, "完成", "🎉 洗卡完成！");
+    else    QMessageBox::critical(this, "失敗", "❌ 洗卡失敗，請查看日誌。");
 }
 
 void PageCardOperation::onClearFields()
