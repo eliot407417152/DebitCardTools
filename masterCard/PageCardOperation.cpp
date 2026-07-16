@@ -1059,6 +1059,11 @@ void PageCardOperation::setupLodTab(QWidget* tab)
         "QPushButton { background:#00838F; color:white; padding:8px 16px; font-weight:bold; border-radius:4px; }"
         "QPushButton:disabled { background:#CCC; color:#666; }");
 
+    m_issueCardBtn = new QPushButton("💳 發卡", tab);
+    m_issueCardBtn->setStyleSheet(
+        "QPushButton { background:#2E7D32; color:white; padding:8px 16px; font-weight:bold; border-radius:4px; }"
+        "QPushButton:disabled { background:#CCC; color:#666; }");
+
     m_fileLabel = new QLabel("尚未載入 — 或直接手動輸入", tab);
     m_fileLabel->setStyleSheet("color:#888; font-style:italic;");
 
@@ -1068,8 +1073,17 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     btnRow->addWidget(m_makeMasterBtn);
     btnRow->addWidget(m_convertBtn);
     btnRow->addWidget(m_washCardBtn);
+    btnRow->addWidget(m_issueCardBtn);
     btnRow->addWidget(m_fileLabel, 1);
     layout->addLayout(btnRow);
+
+    // ── 發卡：00C2 Update Record Ciphered 自行輸入資料 ──────────────────────
+    auto* issueGrp = new QGroupBox("發卡 — 00C2 Update Record Ciphered（自行輸入資料，HEX）", tab);
+    auto* issueLay = new QHBoxLayout(issueGrp);
+    m_issueC2DataEdit = makeHexField(tab, 0, "請輸入 00C2 Update Record Ciphered 的 DataIn（HEX）");
+    m_issueC2DataEdit->setFixedWidth(360);
+    issueLay->addWidget(m_issueC2DataEdit);
+    layout->addWidget(issueGrp);
 
     auto* dataGrp = new QGroupBox("客戶資料欄位（可手動編輯）");
     auto* dataForm = new QFormLayout(dataGrp);
@@ -1106,6 +1120,7 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     connect(m_makeMasterBtn, &QPushButton::clicked, this, &PageCardOperation::onMakeMaster);
     connect(m_convertBtn, &QPushButton::clicked, this, &PageCardOperation::onConvertMaster);
     connect(m_washCardBtn, &QPushButton::clicked, this, &PageCardOperation::onWashCard);
+    connect(m_issueCardBtn, &QPushButton::clicked, this, &PageCardOperation::onIssueCard);
 
     // 客戶資料欄位如果是手動填入（而非透過載入 LOD），只要 C3 / C1 都有值，
     // 也要能啟用「製作母卡」按鈕，不強制一定要先載入檔案。
@@ -2550,6 +2565,41 @@ void PageCardOperation::onWashCard()
     else    QMessageBox::critical(this, "失敗", "❌ 洗卡失敗，請查看日誌。");
 }
 
+void PageCardOperation::onIssueCard()
+{
+    if (!m_canMakeMaster) {
+        log("讀卡機數量不足 2 台，不提供發卡功能。", true);
+        return;
+    }
+
+    QString isamReaderName = m_masterIsamReaderCombo ? m_masterIsamReaderCombo->currentText() : QString();
+    QString cardReaderName = m_masterCardReaderCombo ? m_masterCardReaderCombo->currentText() : QString();
+    if (isamReaderName.isEmpty() || cardReaderName.isEmpty() || isamReaderName == cardReaderName) {
+        QMessageBox::warning(this, "設定錯誤", "請選擇兩台不同的讀卡機（ISAM／卡片）。");
+        return;
+    }
+
+    QString manualC2Data = m_issueC2DataEdit ? m_issueC2DataEdit->text().trimmed().toUpper() : QString();
+    if (manualC2Data.isEmpty()) {
+        QMessageBox::warning(this, "資料不足", "請先輸入 00C2 Update Record Ciphered 的自行輸入資料（HEX）！");
+        return;
+    }
+
+    SCARDHANDLE hIsam = connectReader(isamReaderName);
+    SCARDHANDLE hCard = connectReader(cardReaderName);
+    if (hIsam == 0 || hCard == 0) {
+        QMessageBox::critical(this, "連線失敗", "無法連線所選讀卡機，請確認卡片已插好。");
+        return;
+    }
+
+    log("====== 開始發卡 ======");
+    CardIssuer issuer(hCard, hIsam);
+    bool ok = issuer.execute(manualC2Data, [this](const QString& m, bool e) { log(m, e); });
+
+    if (ok) QMessageBox::information(this, "完成", "🎉 發卡完成！");
+    else    QMessageBox::critical(this, "失敗", "❌ 發卡失敗，請查看日誌。");
+}
+
 void PageCardOperation::onClearFields()
 {
     for (auto* f : { m_nameEdit, m_c3Edit, m_c3CodeEdit, m_c1Edit, m_c1CodeEdit,
@@ -2942,7 +2992,7 @@ void PageCardOperation::log(const QString& msg, bool isError)
 {
     QString color = isError ? "#FF3333" : "#00FF66";
     m_logEdit->append(QString("<font color=\"%1\">[%2] %3</font>")
-        .arg(color, QDateTime::currentDateTime().toString("hh:mm:ss"), msg));
+        .arg(color, QDateTime::currentDateTime().toString("hh:mm:ss"), msg.toHtmlEscaped()));
 }
 
 void PageCardOperation::onExportLog()

@@ -58,6 +58,15 @@
     <ClCompile Include="IsamKeyData.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CardWasher.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IsamKeyChecker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CardIssuer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CardUtils.h">
@@ -76,6 +85,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="OperationMode.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CardWasher.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IsamKeyChecker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CardIssuer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

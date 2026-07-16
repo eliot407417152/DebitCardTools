@@ -8,6 +8,7 @@
 #include "CardUtils.h"
 #include "IsamKeyChecker.h"   // CustomerData / KeyCheckResult
 #include "CardWasher.h"       // 洗卡
+#include "CardIssuer.h"       // 發卡
 
 class QLineEdit;
 class QPushButton;
@@ -273,6 +274,7 @@ private slots:
     void onConvertMaster();
     void onCustomerFieldChanged();
     void onWashCard();
+    void onIssueCard();
 
     // 卡片指令 Tab
     void onCreateFile();
@@ -368,6 +370,8 @@ private:
     QPushButton* m_authBtn = nullptr;
     QPushButton* m_convertBtn = nullptr;   // 母卡轉換
     QPushButton* m_washCardBtn = nullptr;  // 洗卡
+    QPushButton* m_issueCardBtn = nullptr; // 發卡
+    QLineEdit* m_issueC2DataEdit = nullptr; // 發卡：00C2 Update Record Ciphered 自行輸入資料
     QLabel* m_fileLabel = nullptr;
 
     QLineEdit* m_nameEdit = nullptr;
