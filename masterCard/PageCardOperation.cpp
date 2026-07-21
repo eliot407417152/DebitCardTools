@@ -1141,7 +1141,7 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     layout->setSpacing(12);
 
     // ── 讀卡機選擇（比照 ISAM 頁籤做法，自行選擇本頁指令要發送到哪一台讀卡機）──
-    auto* targetGrp = new QGroupBox("目標讀卡機");
+    auto* targetGrp = new QGroupBox("讀卡機選擇");
     auto* targetForm = new QFormLayout(targetGrp);
     auto* m_targetCombo = new QComboBox(content);
     m_targetCombo->addItems(m_readers);

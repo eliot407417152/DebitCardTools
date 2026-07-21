@@ -7,7 +7,7 @@
 
 class QPushButton;
 class QLabel;
-class QTextEdit;
+class QListWidget;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PageSelectReader
@@ -22,6 +22,10 @@ class QTextEdit;
 //   改到「操作頁面 (PageCardOperation)」的各功能區塊中，
 //   以下拉選單個別選擇（做法比照原本「卡片指令」頁的「發送對象」下拉選單）。
 //   若目前偵測到的讀卡機少於 2 台，操作頁面會自動停用「製作母卡」相關功能。
+//
+//   【畫面簡化】
+//   移除原本的說明文字段落與即時日誌主控台，畫面上只保留：
+//   狀態文字 + 偵測到的讀卡機清單（QListWidget）+ 重新偵測／進入 按鈕。
 // ─────────────────────────────────────────────────────────────────────────────
 class PageSelectReader : public QWidget
 {
@@ -44,13 +48,13 @@ private slots:
 
 private:
     void setupUI();
-    void log(const QString& msg, bool isError = false);
+    void setStatus(const QString& msg, bool isError = false);
 
     SCARDCONTEXT m_context = 0;
     QStringList  m_readers;
 
     QLabel* m_statusLabel = nullptr;
+    QListWidget* m_readerListWidget = nullptr;
     QPushButton* m_refreshBtn = nullptr;
     QPushButton* m_confirmBtn = nullptr;
-    QTextEdit* m_logEdit = nullptr;
 };

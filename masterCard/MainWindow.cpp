@@ -1,6 +1,7 @@
 ﻿#include "MainWindow.h"
 #include "PageSelectReader.h"
 #include "PageCardOperation.h"
+#include <QTimer>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -27,10 +28,14 @@ void MainWindow::onReaderSelected()
 
     connect(opPage, &PageCardOperation::backRequested, [this, opPage]() {
         m_stack->setCurrentIndex(0);
-        setWindowTitle("智慧卡產製系統 - 請選擇讀卡機");
-        resize(550, 480);
         m_stack->removeWidget(opPage);
         opPage->deleteLater();
+        setWindowTitle("智慧卡產製系統 - 請選擇讀卡機");
+
+        
+        QTimer::singleShot(0, this, [this]() {
+            resize(550, 480);
+            });
         });
 
     m_stack->addWidget(opPage);
