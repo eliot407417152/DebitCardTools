@@ -447,24 +447,6 @@ void PageCardOperation::setupUI()
 {
     auto* mainLayout = new QVBoxLayout(this);
 
-    auto* btnRow = new QHBoxLayout();
-    auto* backBtn = new QPushButton("⬅️ 返回", this);
-    backBtn->setStyleSheet(
-        "QPushButton { background:#757575; color:white; padding:8px 15px; "
-        "font-weight:bold; border-radius:4px; }");
-    connect(backBtn, &QPushButton::clicked, this, &PageCardOperation::backRequested);
-    btnRow->addWidget(backBtn);
-
-    QString modeText = QString("讀卡機：%1 台偵測到 %2")
-        .arg(m_readers.size())
-        .arg(m_canMakeMaster ? "（🔮 可製作母卡）" : "（🛠 僅一般操作，母卡功能需 ≥2 台讀卡機）");
-    auto* modeLbl = new QLabel(modeText, this);
-    modeLbl->setStyleSheet("font-weight:bold; color:#555; padding-left:12px;");
-    btnRow->addWidget(modeLbl);
-
-    btnRow->addStretch();
-    mainLayout->addLayout(btnRow);
-
     auto* bodyRow = new QHBoxLayout();
 
     auto* tabWidget = new QTabWidget(this);

@@ -239,9 +239,6 @@ public:
         QWidget* parent = nullptr);
     ~PageCardOperation();
 
-signals:
-    void backRequested();
-
 private slots:
     // ISAM 金鑰 Tab
     void onIsamKeySelected(int index);
