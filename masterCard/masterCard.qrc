@@ -1,4 +1,5 @@
 <RCC>
-    <qresource prefix="masterCard">
+    <qresource prefix="/masterCard">
+        <file>atm-card.ico</file>
     </qresource>
 </RCC>

@@ -1016,7 +1016,7 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     auto* layout = new QVBoxLayout(tab);
 
     // ── 製作母卡：需選擇兩台不同的讀卡機（ISAM / 母卡）──────────────────────
-    auto* readerGrp = new QGroupBox("製作母卡 — 讀卡機選擇（需 2 台不同讀卡機）", tab);
+    auto* readerGrp = new QGroupBox("讀卡機選擇", tab);
     auto* readerForm = new QFormLayout(readerGrp);
     m_masterIsamReaderCombo = new QComboBox(tab);
     m_masterCardReaderCombo = new QComboBox(tab);

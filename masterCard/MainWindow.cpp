@@ -2,10 +2,13 @@
 #include "PageSelectReader.h"
 #include "PageCardOperation.h"
 #include <QTimer>
+#include <QIcon>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    setWindowIcon(QIcon(":/masterCard/atm-card.ico"));
+
     m_stack = new QStackedWidget(this);
     setCentralWidget(m_stack);
 
