@@ -1270,7 +1270,8 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     readAllRow->addStretch();
     readAllLay->addLayout(readAllRow);
 
-    auto* readAllHint = new QLabel("P1 = Record Id（自行輸入），Le 預設 00 00 00", readAllGrp);
+    auto* readAllHint = new QLabel("P1 = Record Id（自行輸入），Le 預設 00 00 00\n"
+        "回應資料格式：[Block編號 1B][長度 1B][該筆資料]，重複至結尾，會自動切開顯示每個 block", readAllGrp);
     readAllHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
     readAllLay->addWidget(readAllHint);
 
@@ -2770,13 +2771,60 @@ void PageCardOperation::onReadAllRecord()
 
     QString sw = resp.right(4);
     QString data = resp.left(resp.length() - 4);
-    if (sw == "9000") {
-        log("✔ Read All Record 成功 SW=9000");
-        log("Data: " + (data.isEmpty() ? QString("(空)") : data));
-    }
-    else {
+    if (sw != "9000") {
         log("⚠️ Read All Record SW=" + sw, true);
+        return;
     }
+
+    log("✔ Read All Record 成功 SW=9000");
+
+    if (data.isEmpty()) {
+        log("Data: (空)");
+        return;
+    }
+
+    // 回應資料格式：[Block 編號 1 byte][長度 1 byte][該筆資料 長度 bytes]，重複至結尾
+    // 例如 "011311223344..." → 01=第1筆，13(hex)=19(dec) bytes 長度，後面19 bytes是該筆資料
+    int pos = 0;
+    int blockCount = 0;
+    while (pos < data.length()) {
+        // 至少要有 Block 編號 + 長度 這 2 bytes（4 個 HEX 字元）才夠解析
+        if (pos + 4 > data.length()) {
+            log(QString("⚠️ 剩餘資料不足以組成一個 block（剩餘 %1 bytes）：%2")
+                .arg((data.length() - pos) / 2).arg(data.mid(pos)), true);
+            break;
+        }
+
+        QString blockNoHex = data.mid(pos, 2);
+        QString lenHex = data.mid(pos + 2, 2);
+
+        bool lenOk = false;
+        int lenBytes = lenHex.toInt(&lenOk, 16);
+        if (!lenOk) {
+            log(QString("⚠️ 無法解析長度欄位 (%1)，剩餘資料：%2").arg(lenHex, data.mid(pos)), true);
+            break;
+        }
+
+        int dataStart = pos + 4;
+        int dataHexLen = lenBytes * 2;
+
+        if (dataStart + dataHexLen > data.length()) {
+            log(QString("⚠️ Block %1 宣告長度 %2 bytes，但剩餘資料不足（只剩 %3 bytes）：%4")
+                .arg(blockNoHex).arg(lenBytes).arg((data.length() - dataStart) / 2)
+                .arg(data.mid(dataStart)), true);
+            break;
+        }
+
+        QString blockData = data.mid(dataStart, dataHexLen);
+        ++blockCount;
+        log(QString("Block %1（編號 %2，長度 %3 bytes）：%4")
+            .arg(blockCount).arg(blockNoHex).arg(lenBytes).arg(blockData));
+
+        pos = dataStart + dataHexLen;
+    }
+
+    if (blockCount == 0)
+        log("Data: " + data);
 }
 
 void PageCardOperation::onUpdateTerminalAuthP2()
