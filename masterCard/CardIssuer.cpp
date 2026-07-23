@@ -152,6 +152,47 @@ bool CardIssuer::execute(const QString& manualC2Data, const LogFn& log)
         if (!createDataFile(df.no, df.data, log)) return false;
     }
 
+    // ── 寫入個人化資料內容（0001 / 0002 / 1001 / 1002）─────────────────────────
+    logInfo(log, "── 寫入個人化資料（0001）──");
+    if (!writeDataRecords("0001", QStringList{
+        "011311223344112233445566778899000120300101",
+        "020E4131323334353637383919910101",
+        "030700000100000101",
+        }, log)) return false;
+
+    logInfo(log, "── 寫入個人化資料（0002）──");
+    if (!writeDataRecords("0002", QStringList{
+        "010420260101",
+        "02140011223344556677889900112233445566778899",
+        "0336001122334455667788990011223344556677889900112233445566778899001122334455667788990011223344556677889911223344",
+        }, log)) return false;
+
+    logInfo(log, "── 寫入個人化資料（1001）──");
+    if (!writeDataRecords("1001", QStringList{
+        "01081122334455667788",
+        "021E001122334455667788990011223344556677889900112233445566778899",
+        "031000112233445566778899112233445566",
+        "041000112233445566778899112233445566",
+        "051000112233445566778899112233445566",
+        "061000112233445566778899112233445566",
+        "071000112233445566778899112233445566",
+        "081000112233445566778899112233445566",
+        "091000112233445566778899112233445566",
+        "0A1000112233445566778899112233445566",
+        }, log)) return false;
+
+    logInfo(log, "── 寫入個人化資料（1002）──");
+    if (!writeDataRecords("1002", QStringList{
+        "0118001122334455667788990011223344556677889911223344",
+        "0218001122334455667788990011223344556677889911223344",
+        "0318001122334455667788990011223344556677889911223344",
+        "0418001122334455667788990011223344556677889911223344",
+        "0518001122334455667788990011223344556677889911223344",
+        "0618001122334455667788990011223344556677889911223344",
+        "0718001122334455667788990011223344556677889911223344",
+        "0818001122334455667788990011223344556677889911223344",
+        }, log)) return false;
+
     logInfo(log, "🎉 ====== ✔ 發卡完成 ======");
     return true;
 }
@@ -341,5 +382,30 @@ bool CardIssuer::createDataFile(const QString& fileNo, const QString& createData
         QString("Create File %1").arg(fileNo), log))
         return false;
     logInfo(log, QString("✔ Create File %1 完成。").arg(fileNo));
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 寫入個人化資料內容（0001 / 0002 / 1001 / 1002 專用）：
+//   Select File（卡片）→ 依序對每個 block 執行 Write Record（卡片）
+//   Write Record：00 D2 00 05 Lc(自動) DataIn=block（[Block ID][Length][資料]）
+// ─────────────────────────────────────────────────────────────────────────────
+bool CardIssuer::writeDataRecords(const QString& fileNo, const QStringList& blocks, const LogFn& log)
+{
+    // Select File（卡片）：00 A4 02 00 Lc=02 DataIn=fileNo
+    if (!sendCheck(m_cardHandle, "00A4020002" + fileNo, QString("Select File %1").arg(fileNo), log))
+        return false;
+    logInfo(log, QString("✔ Select File %1 完成。").arg(fileNo));
+
+    for (int i = 0; i < blocks.size(); ++i) {
+        const QString& blockData = blocks.at(i);
+        QString lc = QString("%1").arg(blockData.length() / 2, 2, 16, QChar('0')).toUpper();
+        QString apdu = "00D20005" + lc + blockData;
+        if (!sendCheck(m_cardHandle, apdu,
+            QString("Write Record %1 block %2").arg(fileNo).arg(i + 1), log))
+            return false;
+        logInfo(log, QString("✔ %1 block %2 寫入完成：%3").arg(fileNo).arg(i + 1).arg(blockData));
+    }
+
     return true;
 }

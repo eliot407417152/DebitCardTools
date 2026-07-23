@@ -112,6 +112,11 @@
     <ClCompile Include="MainWindow.cpp" />
     <ClCompile Include="MasterCardUpdater.cpp" />
     <ClCompile Include="PageCardOperation.cpp" />
+    <ClCompile Include="PageCardOperation_ApduTab.cpp" />
+    <ClCompile Include="PageCardOperation_Fields.cpp" />
+    <ClCompile Include="PageCardOperation_IsamCmdTab.cpp" />
+    <ClCompile Include="PageCardOperation_IsamTab.cpp" />
+    <ClCompile Include="PageCardOperation_LodTab.cpp" />
     <ClCompile Include="PageSelectReader.cpp" />
     <QtRcc Include="masterCard.qrc" />
     <QtUic Include="masterCard.ui" />

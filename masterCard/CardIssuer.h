@@ -23,6 +23,9 @@
 //     最後：依序 Create File 建立個人化資料檔（0001 / 0002 / 1001 / 1002 /
 //              1003 / 1080 / 1090 / 1102 / 1103 / 007F / 2F00），僅執行
 //              Create File，不執行 Select / Update。
+//     再之後：針對 0001 / 0002 / 1001 / 1002 這 4 個檔案，各自 Select File
+//              後依序 Write Record 寫入多筆個人化資料（每筆 DataIn 格式為
+//              [Block ID 1 byte][長度 1 byte][資料]，Lc 依實際長度自動計算）。
 //
 //   【實作說明】
 //     比照 CardWasher 的作法，所有 APDU 的 Lc 一律依「實際組出的 DataIn
@@ -84,4 +87,10 @@ private:
 
     // 建立個人化資料檔案：僅 Create File，無 Select / Update
     bool createDataFile(const QString& fileNo, const QString& createDataIn, const LogFn& log);
+
+    // 寫入個人化資料內容（0001 / 0002 / 1001 / 1002 專用）：
+    //   Select File（卡片）→ 依序對每個 block 執行 Write Record（卡片）
+    //   blocks 內每一筆字串皆已是完整 DataIn（[Block ID 1B][Length 1B][資料]），
+    //   Lc 依該筆 DataIn 實際長度自動計算，不採用文件裡標示的 Lc 數字。
+    bool writeDataRecords(const QString& fileNo, const QStringList& blocks, const LogFn& log);
 };

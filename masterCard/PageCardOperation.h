@@ -299,7 +299,7 @@ private:
     void setupIsamCmdTab(QWidget* tab);
     void setupLodTab(QWidget* tab);
     void setupApduTab(QWidget* tab);
-    void setupCreateFileGroup(QWidget* parent, QVBoxLayout* layout);
+    QGroupBox* setupCreateFileGroup(QWidget* parent, QVBoxLayout* layout);
 
     QGroupBox* makeApduGroup(QWidget* parent,
         const QString& title,
