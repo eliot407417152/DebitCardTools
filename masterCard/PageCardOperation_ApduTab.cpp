@@ -564,6 +564,121 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     addApduCmdPage(grcGrp, "⑫ Generate Random Number");
     connect(grcBtn, &QPushButton::clicked, this, &PageCardOperation::onGenerateRandomCard);
 
+    // ── ⑬ Card Authentication ────────────────────────────────────────────────
+    auto* caGrp = new QGroupBox("⑬ Card Authentication", content);
+    auto* caLay = new QVBoxLayout(caGrp);
+    auto* caRow = new QHBoxLayout();
+    auto addCaCol = [&](QLineEdit*& outField, const QString& lbl,
+        const QString& def, int maxLen, bool ro) {
+            auto* col = new QVBoxLayout();
+            auto* l = new QLabel(lbl, caGrp);
+            l->setAlignment(Qt::AlignCenter);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeHexField(caGrp, maxLen);
+            outField->setText(def);
+            outField->setReadOnly(ro);
+            if (ro) {
+                outField->setStyleSheet(
+                    "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+                    "font-weight:bold; font-size:12px; padding:4px; "
+                    "border:1px dashed #AAA; border-radius:3px; }");
+            }
+            col->addWidget(l);
+            col->addWidget(outField);
+            caRow->addLayout(col);
+        };
+
+    addCaCol(m_cardAuthFields.cla, "CLA", "00", 2, true);
+    addCaCol(m_cardAuthFields.ins, "INS", "88", 2, true);
+    addCaCol(m_cardAuthFields.p1, "P1", "00", 2, true);
+    addCaCol(m_cardAuthFields.p2, "P2（Kq，自行輸入）", "", 2, false);
+    addCaCol(m_cardAuthFields.lc, "Lc", "10", 2, true);
+    addCaCol(m_cardAuthFields.le, "Le", "10", 2, true);
+    caRow->addStretch();
+    caLay->addLayout(caRow);
+
+    auto* caR1Lbl = new QLabel("R1（8 bytes）：", caGrp);
+    caR1Lbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_cardAuthFields.r1 = makeEditField(caGrp, false);
+    m_cardAuthFields.r1->setPlaceholderText("輸入 16 個 HEX 字元（8 bytes）");
+    caLay->addWidget(caR1Lbl);
+    caLay->addWidget(m_cardAuthFields.r1);
+
+    auto* caR3Lbl = new QLabel("R3（8 bytes）：", caGrp);
+    caR3Lbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_cardAuthFields.r3 = makeEditField(caGrp, false);
+    m_cardAuthFields.r3->setPlaceholderText("輸入 16 個 HEX 字元（8 bytes）");
+    caLay->addWidget(caR3Lbl);
+    caLay->addWidget(m_cardAuthFields.r3);
+
+    auto* caHint = new QLabel("P2（Kq）直接自行輸入，不做左移運算。DATA = R1 + R3，Lc/Le 固定 10h。", caGrp);
+    caHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    caLay->addWidget(caHint);
+
+    auto* caBtn = new QPushButton("▶ 執行 Card Authentication", caGrp);
+    caBtn->setStyleSheet(
+        "QPushButton { background:#C62828; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    caLay->addWidget(caBtn);
+    addApduCmdPage(caGrp, "⑬ Card Authentication");
+    connect(caBtn, &QPushButton::clicked, this, &PageCardOperation::onCardAuthentication);
+
+    // ── ⑭ Write Record With TAC ──────────────────────────────────────────────
+    auto* wrtGrp = new QGroupBox("⑭ Write Record With TAC", content);
+    auto* wrtLay = new QVBoxLayout(wrtGrp);
+    auto* wrtRow = new QHBoxLayout();
+    auto addWrtCol = [&](QLineEdit*& outField, const QString& lbl,
+        const QString& def, int maxLen, bool ro) {
+            auto* col = new QVBoxLayout();
+            auto* l = new QLabel(lbl, wrtGrp);
+            l->setAlignment(Qt::AlignCenter);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeHexField(wrtGrp, maxLen);
+            outField->setText(def);
+            outField->setReadOnly(ro);
+            if (ro) {
+                outField->setStyleSheet(
+                    "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+                    "font-weight:bold; font-size:12px; padding:4px; "
+                    "border:1px dashed #AAA; border-radius:3px; }");
+            }
+            col->addWidget(l);
+            col->addWidget(outField);
+            wrtRow->addLayout(col);
+        };
+
+    addWrtCol(m_writeRecordTacFields.cla, "CLA", "00", 2, true);
+    addWrtCol(m_writeRecordTacFields.ins, "INS", "E6", 2, true);
+    addWrtCol(m_writeRecordTacFields.p1, "P1", "00", 2, true);
+    addWrtCol(m_writeRecordTacFields.p2, "P2（Kq，自行輸入）", "", 2, false);
+    addWrtCol(m_writeRecordTacFields.lcDisplay, "Lc（自動）", "", 2, true);
+    addWrtCol(m_writeRecordTacFields.le, "Le", "08", 2, true);
+    wrtRow->addStretch();
+    wrtLay->addLayout(wrtRow);
+
+    auto* wrtDataLbl = new QLabel("DATA（自行輸入，長度依 P2 而定）：", wrtGrp);
+    wrtDataLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_writeRecordTacFields.data = makeEditField(wrtGrp, false);
+    m_writeRecordTacFields.data->setPlaceholderText("例如 P2=10 時，輸入 16 個 HEX 字元（8 bytes）");
+    wrtLay->addWidget(wrtDataLbl);
+    wrtLay->addWidget(m_writeRecordTacFields.data);
+
+    auto* wrtHint = new QLabel("Lc 依 DATA 實際長度自動計算，不需自行輸入。", wrtGrp);
+    wrtHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    wrtLay->addWidget(wrtHint);
+
+    connect(m_writeRecordTacFields.data, &QLineEdit::textChanged,
+        this, &PageCardOperation::onWriteRecordWithTacLcUpdate);
+
+    auto* wrtBtn = new QPushButton("▶ 執行 Write Record With TAC", wrtGrp);
+    wrtBtn->setStyleSheet(
+        "QPushButton { background:#EF6C00; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    wrtLay->addWidget(wrtBtn);
+    addApduCmdPage(wrtGrp, "⑭ Write Record With TAC");
+    connect(wrtBtn, &QPushButton::clicked, this, &PageCardOperation::onWriteRecordWithTac);
+    onWriteRecordWithTacLcUpdate();   // 初始化 Lc 顯示
+
     apduCmdList->setCurrentRow(0);
     scroll->setWidget(content);
 
@@ -1100,5 +1215,75 @@ void PageCardOperation::onGenerateRandomCard()
     }
     else {
         log("⚠️ Generate Random Number SW=" + sw, true);
+    }
+}
+
+void PageCardOperation::onCardAuthentication()
+{
+    QString apdu = m_cardAuthFields.buildApdu();   // 呼叫後 Lc 顯示會同步更新
+    if (apdu.length() < 8) {
+        log("[Card Authentication] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Card Authentication ======");
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Card Authentication] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    QString data = resp.left(qMax(0, resp.length() - 4));
+    if (sw == "9000") {
+        log("✔ Card Authentication 成功 SW=9000");
+        log("Data: " + (data.isEmpty() ? QString("(空)") : data));
+    }
+    else {
+        log("⚠️ Card Authentication SW=" + sw, true);
+    }
+}
+
+void PageCardOperation::onWriteRecordWithTacLcUpdate()
+{
+    if (!m_writeRecordTacFields.lcDisplay) return;
+
+    QString dataV = m_writeRecordTacFields.data
+        ? m_writeRecordTacFields.data->text().trimmed().remove(' ').toUpper()
+        : QString();
+
+    m_writeRecordTacFields.lcDisplay->setText(
+        QString("%1").arg(dataV.length() / 2, 2, 16, QChar('0')).toUpper());
+}
+
+void PageCardOperation::onWriteRecordWithTac()
+{
+    onWriteRecordWithTacLcUpdate();   // 確保 Lc 為最新值
+
+    if (m_writeRecordTacFields.data &&
+        m_writeRecordTacFields.data->text().trimmed().isEmpty()) {
+        log("[Write Record With TAC] 請先輸入 DATA", true);
+        return;
+    }
+
+    QString apdu = m_writeRecordTacFields.buildApdu();
+    if (apdu.length() < 10) {
+        log("[Write Record With TAC] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Write Record With TAC ======");
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Write Record With TAC] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    QString data = resp.left(qMax(0, resp.length() - 4));
+    if (sw == "9000") {
+        log("✔ Write Record With TAC 成功 SW=9000");
+        log("Data: " + (data.isEmpty() ? QString("(空)") : data));
+    }
+    else {
+        log("⚠️ Write Record With TAC SW=" + sw, true);
     }
 }

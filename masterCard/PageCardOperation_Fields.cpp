@@ -382,3 +382,55 @@ QString UpdateRecordCipheredFields::buildApdu() const
         + dataV;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CardAuthFields — buildApdu
+//   P2 為自行輸入的 Kq（不做左移運算），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
+// ─────────────────────────────────────────────────────────────────────────────
+QString CardAuthFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    QString r1V = get(r1).leftJustified(16, 'F').left(16);   // R1 固定 8 bytes
+    QString r3V = get(r3).leftJustified(16, 'F').left(16);   // R3 固定 8 bytes
+    QString dataV = r1V + r3V;
+    QString lcV = QString("%1").arg(dataV.length() / 2, 2, 16, QChar('0')).toUpper();   // 固定 10h
+    QString leV = get(le).isEmpty() ? QString("10") : get(le).leftJustified(2, '0').left(2);
+
+    if (lc) lc->setText(lcV);
+
+    return get(cla).leftJustified(2, '0').left(2)
+        + get(ins).leftJustified(2, '0').left(2)
+        + get(p1).leftJustified(2, '0').left(2)
+        + get(p2).leftJustified(2, '0').left(2)
+        + lcV
+        + dataV
+        + leV;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WriteRecordTacFields — buildApdu
+//   P2 為自行輸入的 Kq，DATA 為自行輸入（長度依 P2 而定），Lc 依 DATA 長度自動計算，Le 固定 08
+// ─────────────────────────────────────────────────────────────────────────────
+QString WriteRecordTacFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    QString dataV = get(data);
+    QString lcV = QString("%1").arg(dataV.length() / 2, 2, 16, QChar('0')).toUpper();
+    QString leV = get(le).isEmpty() ? QString("08") : get(le).leftJustified(2, '0').left(2);
+
+    if (lcDisplay) lcDisplay->setText(lcV);
+
+    return get(cla).leftJustified(2, '0').left(2)
+        + get(ins).leftJustified(2, '0').left(2)
+        + get(p1).leftJustified(2, '0').left(2)
+        + get(p2).leftJustified(2, '0').left(2)
+        + lcV
+        + dataV
+        + leV;
+}
+

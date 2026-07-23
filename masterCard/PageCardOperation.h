@@ -215,6 +215,40 @@ struct UpdateRecordCipheredFields
     QString buildApdu() const;
 };
 
+// 卡片指令 — Card Authentication
+//   P2 為自行輸入的 Kq（不做左移運算），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
+struct CardAuthFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* p2 = nullptr;     // Kq（自行輸入，不做左移運算）
+    QLineEdit* lc = nullptr;
+    QLineEdit* le = nullptr;
+
+    QLineEdit* r1 = nullptr;    // R1（8 bytes）
+    QLineEdit* r3 = nullptr;    // R3（8 bytes）
+
+    QString buildApdu() const;
+};
+
+// 卡片指令 — Write Record With TAC
+//   P2 為自行輸入的 Kq，DATA 依 P2 而長度不同，皆為自行輸入
+//   Lc 依 DATA 實際長度自動計算，Le 固定 08
+struct WriteRecordTacFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* p2 = nullptr;     // Kq（自行輸入）
+    QLineEdit* lcDisplay = nullptr;
+    QLineEdit* le = nullptr;
+
+    QLineEdit* data = nullptr;   // DATA（自行輸入，長度依 P2 而定）
+
+    QString buildApdu() const;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PageCardOperation
 //
@@ -291,6 +325,9 @@ private slots:
     void onUpdateRecordCiphered();
     void onReadBinary();
     void onGenerateRandomCard();
+    void onCardAuthentication();
+    void onWriteRecordWithTacLcUpdate();
+    void onWriteRecordWithTac();
     void onExportLog();
 
 private:
@@ -399,6 +436,8 @@ private:
     UpdateRecordCipheredFields m_updateRecordCipheredFields;
     IsamSimpleFields m_readBinaryFields;   // Read Binary：CLA/INS/P1 固定，P2/Le 自行輸入
     IsamSimpleFields m_generateRandomCardFields;   // Generate Random Number：CLA/INS/P1/P2/Le 固定
+    CardAuthFields m_cardAuthFields;   // Card Authentication
+    WriteRecordTacFields m_writeRecordTacFields;   // Write Record With TAC
 
     // ── 共用 ────────────────────────────────────────────────────────────────
     QTextEdit* m_logEdit = nullptr;
