@@ -217,18 +217,27 @@ struct UpdateRecordCipheredFields
 
 // 卡片指令 — Card Authentication
 //   P2 為自行輸入的 Kq（不做左移運算），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
+// 卡片指令 — Card Authentication
+//   P2 由 Kq 邏輯左移 3 位運算（比照 Set Session Key 作法），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
+//   回應（DataOut，16 bytes）= [MAC 8 bytes][R2 8 bytes]
+//   驗證用的 Key 由使用者於 manualKey 欄位自行輸入；若該欄位填寫則直接使用該值，
+//   不再自動向 ISAM 索取（僅在 manualKey 留空時，才會向 ISAM 送 Get Key Check Code, P1=25 取得 Key），
+//   計算 DES(DES(DES(Key,R1),R2),R3) 並與回應的 MAC（前 8 bytes）比對
 struct CardAuthFields
 {
     QLineEdit* cla = nullptr;
     QLineEdit* ins = nullptr;
     QLineEdit* p1 = nullptr;
-    QLineEdit* p2 = nullptr;     // Kq（自行輸入，不做左移運算）
+    QLineEdit* pq = nullptr;        // Kq 原始值（十進位輸入）
+    QLineEdit* p2Display = nullptr; // P2 = Kq 左移 3 位（自動計算、唯讀）
     QLineEdit* lc = nullptr;
     QLineEdit* le = nullptr;
 
-    QLineEdit* r1 = nullptr;    // R1（8 bytes）
-    QLineEdit* r3 = nullptr;    // R3（8 bytes）
+    QLineEdit* r1 = nullptr;    // R1（8 bytes，自行輸入）
+    QLineEdit* r3 = nullptr;    // R3（8 bytes，自行輸入）
+    QLineEdit* manualKey = nullptr;   // Key（自行輸入；若填寫則直接使用，不再向 ISAM 索取）
 
+    QString computedP2() const;
     QString buildApdu() const;
 };
 
@@ -326,6 +335,7 @@ private slots:
     void onReadBinary();
     void onGenerateRandomCard();
     void onCardAuthentication();
+    void onUpdateCardAuthP2();
     void onWriteRecordWithTacLcUpdate();
     void onWriteRecordWithTac();
     void onExportLog();
@@ -405,7 +415,7 @@ private:
     QPushButton* m_convertBtn = nullptr;   // 母卡轉換
     QPushButton* m_washCardBtn = nullptr;  // 洗卡
     QPushButton* m_issueCardBtn = nullptr; // 發卡
-    QLineEdit* m_issueC2DataEdit = nullptr; // 發卡：00C2 Update Record Ciphered 自行輸入資料
+    QLineEdit* m_issueC2DataEdit = nullptr; // 發卡：00C2 Write Record 自行輸入 PIN 碼（HEX，DataIn 會自動組成 01+長度+PIN）
     QLabel* m_fileLabel = nullptr;
 
     QLineEdit* m_nameEdit = nullptr;
@@ -437,6 +447,7 @@ private:
     IsamSimpleFields m_readBinaryFields;   // Read Binary：CLA/INS/P1 固定，P2/Le 自行輸入
     IsamSimpleFields m_generateRandomCardFields;   // Generate Random Number：CLA/INS/P1/P2/Le 固定
     CardAuthFields m_cardAuthFields;   // Card Authentication
+    QComboBox* m_cardAuthIsamReaderCombo = nullptr;   // Card Authentication：取得 Key 用的 ISAM 讀卡機
     WriteRecordTacFields m_writeRecordTacFields;   // Write Record With TAC
 
     // ── 共用 ────────────────────────────────────────────────────────────────

@@ -386,6 +386,17 @@ QString UpdateRecordCipheredFields::buildApdu() const
 // CardAuthFields — buildApdu
 //   P2 為自行輸入的 Kq（不做左移運算），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
 // ─────────────────────────────────────────────────────────────────────────────
+QString CardAuthFields::computedP2() const
+{
+    QString raw = pq ? pq->text().trimmed().remove(' ') : QString();
+    bool ok = false;
+    unsigned int val = raw.toUInt(&ok, 10);   // 十進位解析（非十六進位），比照 Set Session Key 作法
+    if (!ok) val = 0;
+
+    unsigned int shifted = (val << 3) & 0xFF;   // 邏輯左移 3 位，取低 8 bits
+    return QString("%1").arg(shifted, 2, 16, QChar('0')).toUpper();
+}
+
 QString CardAuthFields::buildApdu() const
 {
     auto get = [](QLineEdit* f) {
@@ -397,13 +408,15 @@ QString CardAuthFields::buildApdu() const
     QString dataV = r1V + r3V;
     QString lcV = QString("%1").arg(dataV.length() / 2, 2, 16, QChar('0')).toUpper();   // 固定 10h
     QString leV = get(le).isEmpty() ? QString("10") : get(le).leftJustified(2, '0').left(2);
+    QString p2V = computedP2();
 
     if (lc) lc->setText(lcV);
+    if (p2Display) p2Display->setText(p2V);
 
     return get(cla).leftJustified(2, '0').left(2)
         + get(ins).leftJustified(2, '0').left(2)
         + get(p1).leftJustified(2, '0').left(2)
-        + get(p2).leftJustified(2, '0').left(2)
+        + p2V
         + lcV
         + dataV
         + leV;

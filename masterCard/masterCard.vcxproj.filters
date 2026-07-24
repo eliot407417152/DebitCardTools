@@ -76,10 +76,10 @@
     <ClCompile Include="PageCardOperation_IsamCmdTab.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="PageCardOperation_Fields.cpp">
+    <ClCompile Include="PageCardOperation_ApduTab.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="PageCardOperation_ApduTab.cpp">
+    <ClCompile Include="PageCardOperation_Fields.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -133,10 +133,10 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
     addCol(kccGrp, kccRow, m_isamKeyCheckFields.ins, "INS", "07", 2, true);
     addCol(kccGrp, kccRow, m_isamKeyCheckFields.p1, "P1", "", 2, false);
     addCol(kccGrp, kccRow, m_isamKeyCheckFields.p2, "P2", "00", 2, true);
-    addCol(kccGrp, kccRow, m_isamKeyCheckFields.le, "Le", "07", 2, false);
+    addCol(kccGrp, kccRow, m_isamKeyCheckFields.le, "Le", "08", 2, false);
     kccRow->addStretch();
     kccLay->addLayout(kccRow);
-    auto* kccHint = new QLabel("P1：自行輸入。Le 預設 07，亦可自行修改。", kccGrp);
+    auto* kccHint = new QLabel("P1：自行輸入。Le 預設 08，亦可自行修改。", kccGrp);
     kccHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
     kccLay->addWidget(kccHint);
     auto* kccBtn = new QPushButton("▶ 執行 Get Key Check Code", kccGrp);

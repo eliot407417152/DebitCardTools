@@ -37,7 +37,7 @@ bool CardIssuer::execute(const QString& manualC2Data, const LogFn& log)
         return false;
     }
     if (manualC2Data.trimmed().isEmpty()) {
-        logErr(log, "Error: 00C2 Update Record Ciphered 資料未輸入（自行輸入欄位為空）");
+        logErr(log, "Error: 00C2 Write Record PIN 碼未輸入（自行輸入欄位為空）");
         return false;
     }
 
@@ -128,7 +128,7 @@ bool CardIssuer::execute(const QString& manualC2Data, const LogFn& log)
     logInfo(log, "── 建立應用檔案 00C5（特例）──");
     if (!createAppFile00C5("25", log)) return false;
 
-    // ── 建立發卡應用檔案：00C2（特例，無 KID，Update 資料自行輸入）───────────
+    // ── 建立發卡應用檔案：00C2（特例，無 KID，Write Record 之 PIN 碼自行輸入）─
     logInfo(log, "── 建立應用檔案 00C2（特例）──");
     if (!createAppFile00C2(manualC2Data, log)) return false;
 
@@ -341,7 +341,13 @@ bool CardIssuer::createAppFile00C5(const QString& kid, const LogFn& log)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 建立發卡應用檔案 — 00C2 特例：
-//   Create File → Select File → Update Record Ciphered（資料自行輸入）
+//   Create File → Select File → Write Record（PIN 碼自行輸入）
+//
+//   Write Record：CLA:00 INS:D2 P1:00 P2:05 Lc(自動) Le:空
+//     DataIn = 01 + XX + PIN
+//       XX  = PIN 長度（bytes，HEX 兩碼）
+//       Lc  = PIN 長度（bytes） + 2（"01" 與 "XX" 各佔 1 byte）
+//   例：PIN 輸入 FFFFFFFFFFFFFFFF（8 bytes）→ XX=08，Lc=08+2=0A
 // ─────────────────────────────────────────────────────────────────────────────
 bool CardIssuer::createAppFile00C2(const QString& manualData, const LogFn& log)
 {
@@ -360,12 +366,15 @@ bool CardIssuer::createAppFile00C2(const QString& manualData, const LogFn& log)
         return false;
     logInfo(log, QString("✔ Select File %1 完成。").arg(efid));
 
-    // Update Record Ciphered（卡片）：DataIn 自行輸入
-    QString urcLc = QString("%1").arg(manualData.length() / 2, 2, 16, QChar('0')).toUpper();
-    if (!sendCheck(m_cardHandle, "00E40104" + urcLc + manualData,
-        QString("Update Record Ciphered（%1）").arg(efid), log))
+    // Write Record（卡片）：00 D2 00 05 Lc(自動) DataIn = 01 + PIN長度(HEX) + PIN，Le 空
+    const QString pinData = manualData;
+    const QString pinLenHex = QString("%1").arg(pinData.length() / 2, 2, 16, QChar('0')).toUpper();
+    const QString wrDataIn = "01" + pinLenHex + pinData;
+    const QString wrLc = QString("%1").arg(wrDataIn.length() / 2, 2, 16, QChar('0')).toUpper();
+    const QString wrApdu = "00D20005" + wrLc + wrDataIn;
+    if (!sendCheck(m_cardHandle, wrApdu, QString("Write Record（%1）").arg(efid), log))
         return false;
-    logInfo(log, QString("✔ Update Record Ciphered（%1）完成。").arg(efid));
+    logInfo(log, QString("✔ Write Record（%1）完成（PIN長度=%2, Lc=%3）。").arg(efid, pinLenHex, wrLc));
 
     return true;
 }

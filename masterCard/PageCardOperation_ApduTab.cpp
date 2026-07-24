@@ -591,29 +591,57 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     addCaCol(m_cardAuthFields.cla, "CLA", "00", 2, true);
     addCaCol(m_cardAuthFields.ins, "INS", "88", 2, true);
     addCaCol(m_cardAuthFields.p1, "P1", "00", 2, true);
-    addCaCol(m_cardAuthFields.p2, "P2（Kq，自行輸入）", "", 2, false);
+    addCaCol(m_cardAuthFields.pq, "Kq（原始值）", "", 2, false);
+    addCaCol(m_cardAuthFields.p2Display, "P2（Kq<<3）", "00", 2, true);
     addCaCol(m_cardAuthFields.lc, "Lc", "10", 2, true);
     addCaCol(m_cardAuthFields.le, "Le", "10", 2, true);
     caRow->addStretch();
     caLay->addLayout(caRow);
 
-    auto* caR1Lbl = new QLabel("R1（8 bytes）：", caGrp);
+    auto* caR1Lbl = new QLabel("R1（8 bytes，送入 DATA）：", caGrp);
     caR1Lbl->setStyleSheet("font-weight:bold; font-size:11px;");
     m_cardAuthFields.r1 = makeEditField(caGrp, false);
     m_cardAuthFields.r1->setPlaceholderText("輸入 16 個 HEX 字元（8 bytes）");
     caLay->addWidget(caR1Lbl);
     caLay->addWidget(m_cardAuthFields.r1);
 
-    auto* caR3Lbl = new QLabel("R3（8 bytes）：", caGrp);
+    auto* caR3Lbl = new QLabel("R3（8 bytes，送入 DATA）：", caGrp);
     caR3Lbl->setStyleSheet("font-weight:bold; font-size:11px;");
     m_cardAuthFields.r3 = makeEditField(caGrp, false);
     m_cardAuthFields.r3->setPlaceholderText("輸入 16 個 HEX 字元（8 bytes）");
     caLay->addWidget(caR3Lbl);
     caLay->addWidget(m_cardAuthFields.r3);
 
-    auto* caHint = new QLabel("P2（Kq）直接自行輸入，不做左移運算。DATA = R1 + R3，Lc/Le 固定 10h。", caGrp);
+    auto* caKeyLbl = new QLabel("Key（自行輸入，8 bytes / 16 個 HEX 字元；若填寫則優先使用，不再向 ISAM 索取）：", caGrp);
+    caKeyLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_cardAuthFields.manualKey = makeEditField(caGrp, false);
+    m_cardAuthFields.manualKey->setPlaceholderText("留空則自動向下方 ISAM 讀卡機取得 Key（Get Key Check Code）");
+    caLay->addWidget(caKeyLbl);
+    caLay->addWidget(m_cardAuthFields.manualKey);
+
+    auto* caIsamGrp = new QGroupBox("取得 Key 用的 ISAM 讀卡機（Key 欄位留空時才會使用）", caGrp);
+    auto* caIsamForm = new QFormLayout(caIsamGrp);
+    m_cardAuthIsamReaderCombo = new QComboBox(caIsamGrp);
+    m_cardAuthIsamReaderCombo->addItems(m_readers);
+    caIsamForm->addRow("ISAM 讀卡機：", m_cardAuthIsamReaderCombo);
+    caLay->addWidget(caIsamGrp);
+
+    auto* caVerifyHint = new QLabel(
+        "執行後會：① 送出 Card Authentication（DATA=R1+R3），回應 16 bytes 拆成 "
+        "[MAC 前 8 bytes] + [R2 後 8 bytes]；② 取得 Key（若上方 Key 欄位已填寫則直接使用該值，"
+        "否則向下方 ISAM 讀卡機送 Get Key Check Code（82 07 25 00 Le=07）取得）；"
+        "③ 計算 DES(DES(DES(Key,R1),R2),R3) 並與 MAC 比對，"
+        "結果會顯示 O（正確）或 X（錯誤）。", caGrp);
+    caVerifyHint->setWordWrap(true);
+    caVerifyHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    caLay->addWidget(caVerifyHint);
+
+    auto* caHint = new QLabel("P2 由 Kq 邏輯左移 3 位自動運算（比照 Set Session Key 作法）。DATA = R1 + R3，Lc/Le 固定 10h。", caGrp);
     caHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
     caLay->addWidget(caHint);
+
+    connect(m_cardAuthFields.pq, &QLineEdit::textChanged,
+        this, &PageCardOperation::onUpdateCardAuthP2);
 
     auto* caBtn = new QPushButton("▶ 執行 Card Authentication", caGrp);
     caBtn->setStyleSheet(
@@ -622,6 +650,7 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     caLay->addWidget(caBtn);
     addApduCmdPage(caGrp, "⑬ Card Authentication");
     connect(caBtn, &QPushButton::clicked, this, &PageCardOperation::onCardAuthentication);
+    onUpdateCardAuthP2();   // 初始化顯示
 
     // ── ⑭ Write Record With TAC ──────────────────────────────────────────────
     auto* wrtGrp = new QGroupBox("⑭ Write Record With TAC", content);
@@ -1218,15 +1247,24 @@ void PageCardOperation::onGenerateRandomCard()
     }
 }
 
+void PageCardOperation::onUpdateCardAuthP2()
+{
+    if (m_cardAuthFields.p2Display)
+        m_cardAuthFields.p2Display->setText(m_cardAuthFields.computedP2());
+}
+
 void PageCardOperation::onCardAuthentication()
 {
-    QString apdu = m_cardAuthFields.buildApdu();   // 呼叫後 Lc 顯示會同步更新
+    QString apdu = m_cardAuthFields.buildApdu();   // 呼叫後 P2/Lc 顯示會同步更新
     if (apdu.length() < 8) {
         log("[Card Authentication] APDU 不完整，請確認欄位", true);
         return;
     }
 
     log("====== Card Authentication ======");
+    log(QString("Kq 邏輯左移 3 位 → P2 = %1")
+        .arg(m_cardAuthFields.p2Display ? m_cardAuthFields.p2Display->text() : QString()));
+
     bool ok = false;
     QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
         [this](const QString& msg, bool err) { log(msg, err); });
@@ -1234,13 +1272,75 @@ void PageCardOperation::onCardAuthentication()
 
     QString sw = resp.right(4);
     QString data = resp.left(qMax(0, resp.length() - 4));
-    if (sw == "9000") {
-        log("✔ Card Authentication 成功 SW=9000");
-        log("Data: " + (data.isEmpty() ? QString("(空)") : data));
+    if (sw != "9000") {
+        log("⚠️ Card Authentication SW=" + sw, true);
+        return;
+    }
+
+    log("✔ Card Authentication 成功 SW=9000");
+    log("Data: " + (data.isEmpty() ? QString("(空)") : data));
+
+    // 回應（16 bytes）拆成 [MAC 前 8 bytes] + [R2 後 8 bytes]
+    QString mac = data.left(16);
+    QString r2FromResp = data.mid(16, 16);
+    if (mac.length() < 16 || r2FromResp.length() < 16) {
+        log("⚠️ 回應長度不足 16 bytes，無法拆出 MAC / R2，略過驗證。", true);
+        return;
+    }
+    log("回應拆解 → MAC（前8 bytes）：" + mac + "　R2（後8 bytes）：" + r2FromResp);
+
+    // 取得 Key：若使用者已於 Key 欄位自行輸入，優先使用該值；
+    // 否則比照舊有邏輯，向 ISAM 送 Get Key Check Code（82 07 25 00 Le=07）取得
+    QString key = m_cardAuthFields.manualKey
+        ? m_cardAuthFields.manualKey->text().trimmed().remove(' ').toUpper()
+        : QString();
+
+    if (!key.isEmpty()) {
+        log("✔ 使用自行輸入的 Key：" + key);
     }
     else {
-        log("⚠️ Card Authentication SW=" + sw, true);
+        SCARDHANDLE hIsam = connectReader(
+            m_cardAuthIsamReaderCombo ? m_cardAuthIsamReaderCombo->currentText() : QString());
+        if (hIsam == 0) {
+            log("Error: 無效的 ISAM 卡片控制代碼，無法取得 Key，略過驗證。", true);
+            return;
+        }
+
+        bool isamOk = false;
+        QString keyResp = CardUtils::sendApdu(hIsam, "8207250007", isamOk,
+            [this](const QString& msg, bool err) { log(msg, err); });
+        QString keySw = keyResp.right(4);
+        if (!isamOk || keySw != "9000") {
+            log(QString("Error: [Get Key Check Code] 失敗 (SW=%1)，略過驗證。").arg(keySw), true);
+            return;
+        }
+        key = keyResp.left(qMax(0, keyResp.length() - 4));
+        log("✔ 向 ISAM 取得 Key：" + key);
     }
+
+    // 計算 DES(DES(DES(Key,R1),R2),R3)
+    QString r1 = m_cardAuthFields.r1 ? m_cardAuthFields.r1->text().trimmed().remove(' ').toUpper() : QString();
+    QString r3 = m_cardAuthFields.r3 ? m_cardAuthFields.r3->text().trimmed().remove(' ').toUpper() : QString();
+
+    QString keyV = key.leftJustified(16, 'F').left(16);
+    QString r1V = r1.leftJustified(16, 'F').left(16);
+    QString r2V = r2FromResp.leftJustified(16, 'F').left(16);
+    QString r3V = r3.leftJustified(16, 'F').left(16);
+
+    log(QString("驗證用值 → Key：%1　R1：%2　R2：%3　R3：%4")
+        .arg(keyV, r1V, r2V, r3V));
+
+    QString step1 = CardUtils::desSingleBlockHex(keyV, r1V, /*encrypt=*/true);   // DES(Key, R1)
+    QString step2 = CardUtils::desSingleBlockHex(step1, r2V, /*encrypt=*/true);  // DES(上一步, R2)
+    QString step3 = CardUtils::desSingleBlockHex(step2, r3V, /*encrypt=*/true);  // DES(上一步, R3)
+
+    log(QString("驗證計算 DES(DES(DES(Key,R1),R2),R3)　R1=%1　R3=%2　結果 = %3")
+        .arg(r1V, r3V, step3));
+
+    if (!step3.isEmpty() && step3.compare(mac, Qt::CaseInsensitive) == 0)
+        log("驗證結果：O（正確，與 MAC 一致）");
+    else
+        log(QString("驗證結果：X（錯誤！計算值 %1 與 MAC %2 不一致）").arg(step3, mac), true);
 }
 
 void PageCardOperation::onWriteRecordWithTacLcUpdate()
