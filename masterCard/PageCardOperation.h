@@ -282,6 +282,9 @@ public:
         QWidget* parent = nullptr);
     ~PageCardOperation();
 
+    // 設定選單「日誌顯示設定」使用：套用日誌字體大小(px)與行距(百分比，100=預設單行高)
+    void applyLogAppearance(int fontSizePx, int lineSpacingPercent);
+
 private slots:
     // ISAM 金鑰 Tab
     void onIsamKeySelected(int index);
@@ -372,6 +375,10 @@ private:
     CustomerData collectDataFromFields() const;
 
     void log(const QString& msg, bool isError = false);
+
+    // ── 日誌外觀設定 ────────────────────────────────────────────────────────
+    int m_logFontSize = 11;            // px
+    int m_logLineSpacingPercent = 100; // 100 = 預設單行行高
 
     // ── 讀卡機環境 ──────────────────────────────────────────────────────────
     SCARDCONTEXT m_context = 0;

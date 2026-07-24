@@ -26,6 +26,14 @@ namespace {
     constexpr int kSelectPageDefaultH = 480;
     constexpr int kOperationPageDefaultW = 1050;
     constexpr int kOperationPageDefaultH = 600;
+
+    // 日誌顯示設定的預設值與可調整範圍
+    constexpr int kLogFontSizeDefault = 11;   // px
+    constexpr int kLogFontSizeMin = 8;
+    constexpr int kLogFontSizeMax = 40;
+    constexpr int kLogLineSpacingDefault = 100;  // % (100 = 預設單行行高)
+    constexpr int kLogLineSpacingMin = 50;
+    constexpr int kLogLineSpacingMax = 300;
 }
 
 MainWindow::MainWindow(QWidget* parent)
@@ -54,6 +62,9 @@ void MainWindow::buildMenuBar()
     QAction* windowSizeAct = settingMenu->addAction(QStringLiteral("視窗大小設定(&W)..."));
     connect(windowSizeAct, &QAction::triggered, this, &MainWindow::onEditWindowSize);
 
+    QAction* logAppearanceAct = settingMenu->addAction(QStringLiteral("日誌顯示設定(&L)..."));
+    connect(logAppearanceAct, &QAction::triggered, this, &MainWindow::onEditLogAppearance);
+
     QMenu* programMenu = menuBar()->addMenu(QStringLiteral("程式(&P)"));
     QAction* backAct = programMenu->addAction(QStringLiteral("返回偵測頁面(&B)"));
     connect(backAct, &QAction::triggered, this, &MainWindow::onBackToSelectReader);
@@ -75,6 +86,7 @@ void MainWindow::onReaderSelected()
 
     setWindowTitle("智慧卡產製系統 - 操作工作區");
     applyWindowSizeForCurrentPage();
+    applyLogSettingsToOperationPage();
 }
 
 // 返回「選擇讀卡機」頁面：現在只透過選單「程式→返回偵測頁面」觸發
@@ -194,4 +206,78 @@ void MainWindow::onEditWindowSize()
     QMessageBox::information(this, QStringLiteral("完成"),
         QStringLiteral("視窗大小已儲存：%1 x %2\n下次切到%3會直接套用這個大小。")
         .arg(w).arg(h).arg(onOperationPage ? QStringLiteral("操作工作區頁面") : QStringLiteral("選擇讀卡機頁面")));
+}
+
+// 日誌顯示設定：調整「通訊日誌」區塊的字體大小與行距，設定完成後存入 config.ini，
+// 下次開啟操作工作區頁面會直接套用；若目前已在操作工作區頁面，則立即套用讓使用者馬上看到效果
+void MainWindow::onEditLogAppearance()
+{
+    QSettings settings(QCoreApplication::applicationDirPath() + "/config.ini", QSettings::IniFormat);
+    const int curFontSize = settings.value(QStringLiteral("Log/FontSize"), kLogFontSizeDefault).toInt();
+    const int curLineSpacing = settings.value(QStringLiteral("Log/LineSpacingPercent"), kLogLineSpacingDefault).toInt();
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("日誌顯示設定"));
+
+    auto* hintLbl = new QLabel(QStringLiteral("套用對象：操作工作區頁面右側的「通訊日誌」"), &dlg);
+    hintLbl->setStyleSheet(QStringLiteral("color:#666;"));
+
+    auto* fontSizeSpin = new QSpinBox(&dlg);
+    fontSizeSpin->setRange(kLogFontSizeMin, kLogFontSizeMax);
+    fontSizeSpin->setSuffix(QStringLiteral(" px"));
+    fontSizeSpin->setValue(curFontSize);
+
+    auto* lineSpacingSpin = new QSpinBox(&dlg);
+    lineSpacingSpin->setRange(kLogLineSpacingMin, kLogLineSpacingMax);
+    lineSpacingSpin->setSingleStep(10);
+    lineSpacingSpin->setSuffix(QStringLiteral(" %"));
+    lineSpacingSpin->setValue(curLineSpacing);
+
+    auto* formLayout = new QFormLayout();
+    formLayout->addRow(QStringLiteral("日誌字體大小："), fontSizeSpin);
+    formLayout->addRow(QStringLiteral("每行間距："), lineSpacingSpin);
+
+    auto* resetBtn = new QPushButton(QStringLiteral("還原預設值"), &dlg);
+    connect(resetBtn, &QPushButton::clicked, &dlg, [fontSizeSpin, lineSpacingSpin]() {
+        fontSizeSpin->setValue(kLogFontSizeDefault);
+        lineSpacingSpin->setValue(kLogLineSpacingDefault);
+        });
+
+    auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttonBox, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    auto* mainLayout = new QVBoxLayout(&dlg);
+    mainLayout->addWidget(hintLbl);
+    mainLayout->addLayout(formLayout);
+    mainLayout->addWidget(resetBtn);
+    mainLayout->addWidget(buttonBox);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const int fontSize = fontSizeSpin->value();
+    const int lineSpacing = lineSpacingSpin->value();
+
+    settings.setValue(QStringLiteral("Log/FontSize"), fontSize);
+    settings.setValue(QStringLiteral("Log/LineSpacingPercent"), lineSpacing);
+
+    if (m_opPage)
+        m_opPage->applyLogAppearance(fontSize, lineSpacing);
+
+    QMessageBox::information(this, QStringLiteral("完成"),
+        QStringLiteral("日誌顯示設定已儲存：字體 %1px、行距 %2%\n下次進入操作工作區頁面會直接套用。")
+        .arg(fontSize).arg(lineSpacing));
+}
+
+void MainWindow::applyLogSettingsToOperationPage()
+{
+    if (!m_opPage)
+        return;
+
+    QSettings settings(QCoreApplication::applicationDirPath() + "/config.ini", QSettings::IniFormat);
+    const int fontSize = settings.value(QStringLiteral("Log/FontSize"), kLogFontSizeDefault).toInt();
+    const int lineSpacing = settings.value(QStringLiteral("Log/LineSpacingPercent"), kLogLineSpacingDefault).toInt();
+
+    m_opPage->applyLogAppearance(fontSize, lineSpacing);
 }

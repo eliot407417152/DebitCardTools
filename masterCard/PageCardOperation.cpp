@@ -24,6 +24,8 @@
 #include <QListWidget>
 #include <QStackedWidget>
 #include <QSplitter>
+#include <QTextCursor>
+#include <QTextBlockFormat>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 建構子
@@ -139,8 +141,9 @@ void PageCardOperation::setupUI()
     m_logEdit = new QTextEdit(this);
     m_logEdit->setReadOnly(true);
     m_logEdit->setStyleSheet(
-        "background:#121212; color:#00FF66; "
-        "font-family:'Courier New',monospace; font-size:11px;");
+        QString("background:#121212; color:#00FF66; "
+            "font-family:'Courier New',monospace; font-size:%1px;")
+        .arg(m_logFontSize));
     logLay->addWidget(m_logEdit);
     bodyRow->addWidget(logGrp, 2);
 
@@ -332,6 +335,39 @@ void PageCardOperation::log(const QString& msg, bool isError)
     QString color = isError ? "#FF3333" : "#00FF66";
     m_logEdit->append(QString("<font color=\"%1\">[%2] %3</font>")
         .arg(color, QDateTime::currentDateTime().toString("hh:mm:ss"), msg.toHtmlEscaped()));
+
+    // 讓剛新增的這一行也套用目前設定的行距，不用等下次調整設定才生效
+    QTextCursor cursor = m_logEdit->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    QTextBlockFormat fmt = cursor.blockFormat();
+    fmt.setLineHeight(m_logLineSpacingPercent, QTextBlockFormat::ProportionalHeight);
+    cursor.setBlockFormat(fmt);
+}
+
+// 設定選單「日誌顯示設定」使用：套用字體大小(px)與行距(百分比)，
+// 並立即套用到目前已存在的每一行日誌，讓使用者馬上看到效果
+void PageCardOperation::applyLogAppearance(int fontSizePx, int lineSpacingPercent)
+{
+    m_logFontSize = fontSizePx;
+    m_logLineSpacingPercent = lineSpacingPercent;
+
+    if (!m_logEdit)
+        return;
+
+    m_logEdit->setStyleSheet(
+        QString("background:#121212; color:#00FF66; "
+            "font-family:'Courier New',monospace; font-size:%1px;")
+        .arg(m_logFontSize));
+
+    QTextCursor cursor(m_logEdit->document());
+    cursor.beginEditBlock();
+    cursor.movePosition(QTextCursor::Start);
+    QTextBlockFormat fmt;
+    fmt.setLineHeight(m_logLineSpacingPercent, QTextBlockFormat::ProportionalHeight);
+    do {
+        cursor.setBlockFormat(fmt);
+    } while (cursor.movePosition(QTextCursor::NextBlock));
+    cursor.endEditBlock();
 }
 
 void PageCardOperation::onExportLog()
