@@ -130,11 +130,16 @@ void PageCardOperation::setupUI()
     auto* logLay = new QVBoxLayout(logGrp);
 
     auto* logBtnRow = new QHBoxLayout();
+    m_clearLogBtn = new QPushButton("🧹 清除日誌", logGrp);
+    m_clearLogBtn->setStyleSheet(
+        "QPushButton { background:#795548; color:white; padding:6px 12px; "
+        "font-weight:bold; border-radius:4px; }");
     m_exportLogBtn = new QPushButton("💾 匯出日誌", logGrp);
     m_exportLogBtn->setStyleSheet(
         "QPushButton { background:#455A64; color:white; padding:6px 12px; "
         "font-weight:bold; border-radius:4px; }");
     logBtnRow->addStretch();
+    logBtnRow->addWidget(m_clearLogBtn);
     logBtnRow->addWidget(m_exportLogBtn);
     logLay->addLayout(logBtnRow);
 
@@ -148,6 +153,7 @@ void PageCardOperation::setupUI()
     bodyRow->addWidget(logGrp, 2);
 
     connect(m_exportLogBtn, &QPushButton::clicked, this, &PageCardOperation::onExportLog);
+    connect(m_clearLogBtn, &QPushButton::clicked, this, &PageCardOperation::onClearLog);
 
     mainLayout->addLayout(bodyRow);
 }
@@ -368,6 +374,21 @@ void PageCardOperation::applyLogAppearance(int fontSizePx, int lineSpacingPercen
         cursor.setBlockFormat(fmt);
     } while (cursor.movePosition(QTextCursor::NextBlock));
     cursor.endEditBlock();
+}
+
+void PageCardOperation::onClearLog()
+{
+    if (!m_logEdit || m_logEdit->toPlainText().trimmed().isEmpty()) {
+        return; // 本來就沒有內容，不用特別提示
+    }
+
+    const auto ret = QMessageBox::question(this, "清除日誌",
+        "確定要清除目前的通訊日誌嗎？此動作無法復原。",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (ret != QMessageBox::Yes)
+        return;
+
+    m_logEdit->clear();
 }
 
 void PageCardOperation::onExportLog()

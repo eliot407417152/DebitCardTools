@@ -342,6 +342,7 @@ private slots:
     void onWriteRecordWithTacLcUpdate();
     void onWriteRecordWithTac();
     void onExportLog();
+    void onClearLog();
 
 private:
     void setupUI();
@@ -460,4 +461,5 @@ private:
     // ── 共用 ────────────────────────────────────────────────────────────────
     QTextEdit* m_logEdit = nullptr;
     QPushButton* m_exportLogBtn = nullptr;
+    QPushButton* m_clearLogBtn = nullptr;
 };
