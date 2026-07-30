@@ -26,6 +26,7 @@
 #include <QSplitter>
 #include <QCoreApplication>
 #include <QDir>
+#include <QDialog>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab 3 — 卡片指令（Create / Select / Write / List / Verify Pin / Read Record / Read All Record）
@@ -614,58 +615,28 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     caLay->addWidget(caR3Lbl);
     caLay->addWidget(m_cardAuthFields.r3);
 
-    auto* caKeySetGrp = new QGroupBox("Key Set（Card Authentication 用的 K）", caGrp);
-    auto* caKeySetLay = new QVBoxLayout(caKeySetGrp);
+    // ── Key Set 狀態（唯讀顯示，實際載入 / 選擇改到選單「設定 → Key Set / Data Set 管理...」）──
+    auto* caKeyStatusGrp = new QGroupBox("使用中的 Key Set（Card Authentication 用的 K）", caGrp);
+    auto* caKeyStatusLay = new QVBoxLayout(caKeyStatusGrp);
 
-    auto* caKeySetBtnRow = new QHBoxLayout();
-    m_loadKeySetBtn = new QPushButton("📂 重新載入 Key Set 檔案", caKeySetGrp);
-    m_loadKeySetBtn->setStyleSheet(
-        "QPushButton { background:#455A64; color:white; padding:6px 12px; font-weight:bold; border-radius:4px; }");
-    m_keySetFileLbl = new QLabel("尚未載入", caKeySetGrp);
-    m_keySetFileLbl->setStyleSheet("color:#888; font-style:italic;");
-    caKeySetBtnRow->addWidget(m_loadKeySetBtn);
-    caKeySetBtnRow->addWidget(m_keySetFileLbl, 1);
-    caKeySetLay->addLayout(caKeySetBtnRow);
+    auto* caKeyStatusHint = new QLabel(
+        "Key Set / Data Set 的載入與選擇，請至上方選單「設定 → Key Set / Data Set 管理...」開啟管理視窗操作，"
+        "這裡僅顯示目前套用的結果，供執行 Card Authentication 前確認。", caKeyStatusGrp);
+    caKeyStatusHint->setWordWrap(true);
+    caKeyStatusHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    caKeyStatusLay->addWidget(caKeyStatusHint);
 
-    m_keySetCombo = new QComboBox(caKeySetGrp);
-    m_keySetCombo->addItem("── 尚未載入 Key Set 檔案 ──");
-    caKeySetLay->addWidget(m_keySetCombo);
-
-    auto* caKeySetIdRow = new QHBoxLayout();
-    auto* caKeySetIdLbl = new QLabel("依 ID 查詢：", caKeySetGrp);
-    caKeySetIdLbl->setStyleSheet("font-weight:bold; font-size:11px;");
-    m_keySetIdEdit = makeEditField(caKeySetGrp, false);
-    m_keySetIdEdit->setPlaceholderText("輸入 ID，例如 05");
-    m_keySetApplyBtn = new QPushButton("套用", caKeySetGrp);
-    caKeySetIdRow->addWidget(caKeySetIdLbl);
-    caKeySetIdRow->addWidget(m_keySetIdEdit);
-    caKeySetIdRow->addWidget(m_keySetApplyBtn);
-    caKeySetLay->addLayout(caKeySetIdRow);
-
-    auto* caSetKeyLbl = new QLabel("Set Key（目前選取項目的金鑰本體）：", caKeySetGrp);
+    auto* caSetKeyLbl = new QLabel("Set Key（目前選取項目的金鑰本體）：", caKeyStatusGrp);
     caSetKeyLbl->setStyleSheet("font-weight:bold; font-size:11px;");
-    m_keySetValueLbl = new QLabel("—", caKeySetGrp);
-    m_keySetValueLbl->setWordWrap(true);
-    m_keySetValueLbl->setStyleSheet(
+    m_caKeySetStatusLbl = new QLabel("—（尚未選擇，請至「設定 → Key Set / Data Set 管理...」選取）", caKeyStatusGrp);
+    m_caKeySetStatusLbl->setWordWrap(true);
+    m_caKeySetStatusLbl->setStyleSheet(
         "QLabel { background:#EEEEEE; color:#333; font-family:'Courier New'; "
         "padding:4px 8px; border:1px solid #CCC; border-radius:3px; }");
-    caKeySetLay->addWidget(caSetKeyLbl);
-    caKeySetLay->addWidget(m_keySetValueLbl);
+    caKeyStatusLay->addWidget(caSetKeyLbl);
+    caKeyStatusLay->addWidget(m_caKeySetStatusLbl);
 
-    auto* caKeySetHint = new QLabel(
-        "Key Set 檔案（KeySet.txt）預設放在程式所在目錄，啟動時會自動嘗試載入；"
-        "也可以用上方按鈕重新指定檔案。輸入 ID 按「套用」即可直接切換到對應項目，"
-        "其金鑰本體就是公式裡的 K（卡片認證基碼），不再向 ISAM 查詢或自行輸入。", caKeySetGrp);
-    caKeySetHint->setWordWrap(true);
-    caKeySetHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
-    caKeySetLay->addWidget(caKeySetHint);
-
-    caLay->addWidget(caKeySetGrp);
-
-    connect(m_loadKeySetBtn, &QPushButton::clicked, this, &PageCardOperation::onLoadKeySet);
-    connect(m_keySetApplyBtn, &QPushButton::clicked, this, &PageCardOperation::onKeySetIdApply);
-    connect(m_keySetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-        this, &PageCardOperation::onKeySetSelectionChanged);
+    caLay->addWidget(caKeyStatusGrp);
 
     auto* caVerifyHint = new QLabel(
         "執行後會：① 送出 Card Authentication（DATA=R1+R3），回應 16 bytes 拆成 "
@@ -679,36 +650,6 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     auto* caHint = new QLabel("P2 由 Kq 邏輯左移 3 位自動運算（比照 Set Session Key 作法）。DATA = R1 + R3，Lc/Le 固定 10h。", caGrp);
     caHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
     caLay->addWidget(caHint);
-
-    // ── Data Set 檢視（通用測試資料查詢，格式同 Key Set，格式見 DataSetLoader.h）──
-    auto* dataSetGrp = new QGroupBox("Data Set（測試資料檢視，供參考用）", caGrp);
-    auto* dataSetLay = new QVBoxLayout(dataSetGrp);
-
-    auto* dataSetBtnRow = new QHBoxLayout();
-    m_loadDataSetBtn = new QPushButton("📂 載入 Data Set 檔案", dataSetGrp);
-    m_loadDataSetBtn->setStyleSheet(
-        "QPushButton { background:#455A64; color:white; padding:6px 12px; font-weight:bold; border-radius:4px; }");
-    m_dataSetFileLbl = new QLabel("尚未載入", dataSetGrp);
-    m_dataSetFileLbl->setStyleSheet("color:#888; font-style:italic;");
-    dataSetBtnRow->addWidget(m_loadDataSetBtn);
-    dataSetBtnRow->addWidget(m_dataSetFileLbl, 1);
-    dataSetLay->addLayout(dataSetBtnRow);
-
-    m_dataSetCombo = new QComboBox(dataSetGrp);
-    m_dataSetCombo->addItem("── 請先載入 Data Set 檔案 ──");
-    dataSetLay->addWidget(m_dataSetCombo);
-
-    m_dataSetValueLbl = new QLabel("—", dataSetGrp);
-    m_dataSetValueLbl->setStyleSheet(
-        "QLabel { background:#EEEEEE; color:#333; font-family:'Courier New'; "
-        "padding:4px 8px; border:1px solid #CCC; border-radius:3px; }");
-    dataSetLay->addWidget(m_dataSetValueLbl);
-
-    caLay->addWidget(dataSetGrp);
-
-    connect(m_loadDataSetBtn, &QPushButton::clicked, this, &PageCardOperation::onLoadDataSet);
-    connect(m_dataSetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-        this, &PageCardOperation::onDataSetSelectionChanged);
 
     connect(m_cardAuthFields.pq, &QLineEdit::textChanged,
         this, &PageCardOperation::onUpdateCardAuthP2);
@@ -779,7 +720,8 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     onWriteRecordWithTacLcUpdate();   // 初始化 Lc 顯示
 
     apduCmdList->setCurrentRow(0);
-    //autoLoadKeySetAndDataSet();   // 嘗試自動載入程式目錄下的 KeySet.txt / DataSet.txt
+    // Key Set / Data Set 的建立與自動載入，改到建構子裡（buildKeySetDataSetDialog() +
+    // autoLoadKeySetAndDataSet()），因為相關控制項現在位於獨立管理視窗，而不是這個頁籤裡。
     scroll->setWidget(content);
 
     auto* tabLayout = new QVBoxLayout(tab);
@@ -1401,6 +1343,139 @@ void PageCardOperation::onCardAuthentication()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Key Set / Data Set 管理視窗
+//   原本這些控制項（載入按鈕、下拉選單、依 ID 查詢…）是直接畫在「卡片指令」頁籤的
+//   Card Authentication 區塊裡；現在改成獨立視窗，由主視窗選單「設定 → Key Set /
+//   Data Set 管理...」開啟，卡片指令頁籤只保留一個唯讀狀態顯示（m_caKeySetStatusLbl）。
+//   視窗只會建立一次（lazy singleton），重複開啟只是把同一個視窗喚起到最上層，
+//   已載入的資料與目前選取狀態都會保留。
+// ─────────────────────────────────────────────────────────────────────────────
+void PageCardOperation::buildKeySetDataSetDialog()
+{
+    if (m_keySetDataSetDialog)
+        return; // 已建立過，不重複建立
+
+    auto* dlg = new QDialog(this);
+    dlg->setWindowTitle("Key Set / Data Set 管理");
+    dlg->resize(520, 620);
+    // 使用非強制 Modal（Qt::Window）即可：允許使用者開著這個視窗、切換回主視窗操作，
+    // 不用每次都先關閉管理視窗才能繼續操作卡片指令。
+    dlg->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
+    auto* dlgLay = new QVBoxLayout(dlg);
+
+    // ── Key Set ──────────────────────────────────────────────────────────
+    auto* keySetGrp = new QGroupBox("Key Set（Card Authentication 用的 K）", dlg);
+    auto* keySetLay = new QVBoxLayout(keySetGrp);
+
+    auto* keySetBtnRow = new QHBoxLayout();
+    m_loadKeySetBtn = new QPushButton("📂 重新載入 Key Set 檔案", keySetGrp);
+    m_loadKeySetBtn->setStyleSheet(
+        "QPushButton { background:#455A64; color:white; padding:6px 12px; font-weight:bold; border-radius:4px; }");
+    m_keySetFileLbl = new QLabel("尚未載入", keySetGrp);
+    m_keySetFileLbl->setStyleSheet("color:#888; font-style:italic;");
+    keySetBtnRow->addWidget(m_loadKeySetBtn);
+    keySetBtnRow->addWidget(m_keySetFileLbl, 1);
+    keySetLay->addLayout(keySetBtnRow);
+
+    m_keySetCombo = new QComboBox(keySetGrp);
+    m_keySetCombo->addItem("── 尚未載入 Key Set 檔案 ──");
+    keySetLay->addWidget(m_keySetCombo);
+
+    auto* keySetIdRow = new QHBoxLayout();
+    auto* keySetIdLbl = new QLabel("依 ID 查詢：", keySetGrp);
+    keySetIdLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_keySetIdEdit = makeEditField(keySetGrp, false);
+    m_keySetIdEdit->setPlaceholderText("輸入 ID，例如 05");
+    m_keySetApplyBtn = new QPushButton("套用", keySetGrp);
+    keySetIdRow->addWidget(keySetIdLbl);
+    keySetIdRow->addWidget(m_keySetIdEdit);
+    keySetIdRow->addWidget(m_keySetApplyBtn);
+    keySetLay->addLayout(keySetIdRow);
+
+    auto* setKeyLbl = new QLabel("Set Key（目前選取項目的金鑰本體）：", keySetGrp);
+    setKeyLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_keySetValueLbl = new QLabel("—", keySetGrp);
+    m_keySetValueLbl->setWordWrap(true);
+    m_keySetValueLbl->setStyleSheet(
+        "QLabel { background:#EEEEEE; color:#333; font-family:'Courier New'; "
+        "padding:4px 8px; border:1px solid #CCC; border-radius:3px; }");
+    keySetLay->addWidget(setKeyLbl);
+    keySetLay->addWidget(m_keySetValueLbl);
+
+    auto* keySetHint = new QLabel(
+        "Key Set 檔案（KeySet.txt）預設放在程式所在目錄，啟動時會自動嘗試載入；"
+        "也可以用上方按鈕重新指定檔案。輸入 ID 按「套用」即可直接切換到對應項目，"
+        "其金鑰本體就是公式裡的 K（卡片認證基碼），不再向 ISAM 查詢或自行輸入。"
+        "選取的項目也會同步顯示在「卡片指令 → Card Authentication」頁面上。", keySetGrp);
+    keySetHint->setWordWrap(true);
+    keySetHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    keySetLay->addWidget(keySetHint);
+
+    dlgLay->addWidget(keySetGrp);
+
+    connect(m_loadKeySetBtn, &QPushButton::clicked, this, &PageCardOperation::onLoadKeySet);
+    connect(m_keySetApplyBtn, &QPushButton::clicked, this, &PageCardOperation::onKeySetIdApply);
+    connect(m_keySetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this, &PageCardOperation::onKeySetSelectionChanged);
+
+    // ── Data Set（通用測試資料查詢，格式同 Key Set，格式見 DataSetLoader.h）──
+    auto* dataSetGrp = new QGroupBox("Data Set（測試資料檢視，供參考用）", dlg);
+    auto* dataSetLay = new QVBoxLayout(dataSetGrp);
+
+    auto* dataSetBtnRow = new QHBoxLayout();
+    m_loadDataSetBtn = new QPushButton("📂 載入 Data Set 檔案", dataSetGrp);
+    m_loadDataSetBtn->setStyleSheet(
+        "QPushButton { background:#455A64; color:white; padding:6px 12px; font-weight:bold; border-radius:4px; }");
+    m_dataSetFileLbl = new QLabel("尚未載入", dataSetGrp);
+    m_dataSetFileLbl->setStyleSheet("color:#888; font-style:italic;");
+    dataSetBtnRow->addWidget(m_loadDataSetBtn);
+    dataSetBtnRow->addWidget(m_dataSetFileLbl, 1);
+    dataSetLay->addLayout(dataSetBtnRow);
+
+    m_dataSetCombo = new QComboBox(dataSetGrp);
+    m_dataSetCombo->addItem("── 請先載入 Data Set 檔案 ──");
+    dataSetLay->addWidget(m_dataSetCombo);
+
+    m_dataSetValueLbl = new QLabel("—", dataSetGrp);
+    m_dataSetValueLbl->setWordWrap(true);
+    m_dataSetValueLbl->setStyleSheet(
+        "QLabel { background:#EEEEEE; color:#333; font-family:'Courier New'; "
+        "padding:4px 8px; border:1px solid #CCC; border-radius:3px; }");
+    dataSetLay->addWidget(m_dataSetValueLbl);
+
+    dlgLay->addWidget(dataSetGrp);
+    dlgLay->addStretch();
+
+    connect(m_loadDataSetBtn, &QPushButton::clicked, this, &PageCardOperation::onLoadDataSet);
+    connect(m_dataSetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this, &PageCardOperation::onDataSetSelectionChanged);
+
+    auto* closeBtn = new QPushButton("關閉", dlg);
+    connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::close);
+    dlgLay->addWidget(closeBtn);
+
+    m_keySetDataSetDialog = dlg;
+
+    // 視窗剛建立好、控制項都已存在，把先前（若有）已載入的資料同步顯示上去
+    populateKeySetCombo();
+    populateDataSetCombo();
+}
+
+// 選單「設定 → Key Set / Data Set 管理...」觸發：第一次呼叫時才真正建立視窗，
+// 之後每次呼叫只是把既有視窗顯示、帶到最上層。
+void PageCardOperation::openKeySetDataSetManager()
+{
+    buildKeySetDataSetDialog();
+    if (!m_keySetDataSetDialog)
+        return;
+
+    m_keySetDataSetDialog->show();
+    m_keySetDataSetDialog->raise();
+    m_keySetDataSetDialog->activateWindow();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Key Set / Data Set：自動載入 + 手動載入 + 下拉選單同步 + 依 ID 查詢
 // ─────────────────────────────────────────────────────────────────────────────
 void PageCardOperation::autoLoadKeySetAndDataSet()
@@ -1510,14 +1585,21 @@ void PageCardOperation::onKeySetIdApply()
 
 void PageCardOperation::onKeySetSelectionChanged(int index)
 {
-    if (!m_keySetValueLbl) return;
     if (index < 0 || index >= m_keySetEntries.size()) {
-        m_keySetValueLbl->setText("—");
+        if (m_keySetValueLbl) m_keySetValueLbl->setText("—");
+        if (m_caKeySetStatusLbl)
+            m_caKeySetStatusLbl->setText("—（尚未選擇，請至「設定 → Key Set / Data Set 管理...」選取）");
         return;
     }
     const KeySetEntry& e = m_keySetEntries.at(index);
-    m_keySetValueLbl->setText(e.keyHex);
+    if (m_keySetValueLbl) m_keySetValueLbl->setText(e.keyHex);
     if (m_keySetIdEdit) m_keySetIdEdit->setText(e.id);
+
+    // 同步更新「卡片指令」頁 Card Authentication 區塊的唯讀狀態顯示，
+    // 讓使用者不用開啟管理視窗也能確認目前套用的 Key Set 內容
+    if (m_caKeySetStatusLbl)
+        m_caKeySetStatusLbl->setText(
+            QString("%1（KID=%2）Key=%3").arg(e.label, e.kid, e.keyHex));
 }
 
 void PageCardOperation::onLoadDataSet()

@@ -39,6 +39,12 @@ PageCardOperation::PageCardOperation(SCARDCONTEXT context, const QStringList& re
 
     setupUI();
 
+    // Key Set / Data Set 管理視窗現在改由選單觸發開啟；提前建立好視窗（僅建立，不顯示）
+    // 並嘗試自動載入程式目錄下的 KeySet.txt / DataSet.txt，這樣「卡片指令」頁籤上的
+    // 唯讀狀態顯示，一開啟操作頁面就會是最新的，不用等使用者先手動開一次管理視窗。
+    buildKeySetDataSetDialog();
+    autoLoadKeySetAndDataSet();
+
     log(QString("✔ 偵測到 %1 台讀卡機：%2").arg(m_readers.size()).arg(m_readers.join("、")));
     if (m_canMakeMaster)
         log("讀卡機數量足夠（≥2 台），「製卡發卡流程」製作母卡功能已啟用。");

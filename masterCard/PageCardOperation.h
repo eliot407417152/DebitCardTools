@@ -19,6 +19,7 @@ class QLabel;
 class QComboBox;
 class QVBoxLayout;
 class QGroupBox;
+class QDialog;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 各功能區塊的欄位集合（維持原本邏輯不變）
@@ -287,6 +288,10 @@ public:
     // 設定選單「日誌顯示設定」使用：套用日誌字體大小(px)與行距(百分比，100=預設單行高)
     void applyLogAppearance(int fontSizePx, int lineSpacingPercent);
 
+    // 設定選單「Key Set / Data Set 管理」使用：開啟（或喚起）Key Set / Data Set 管理視窗，
+    // 不再放在「卡片指令」頁籤裡，改由選單集中管理，避免混在卡片指令操作中。
+    void openKeySetDataSetManager();
+
 private slots:
     // ISAM 金鑰 Tab
     void onIsamKeySelected(int index);
@@ -389,6 +394,9 @@ private:
     void autoLoadKeySetAndDataSet();
     void populateKeySetCombo();
     void populateDataSetCombo();
+    // 建立「Key Set / Data Set 管理」視窗（僅第一次呼叫 openKeySetDataSetManager() 時建立一次，
+    // 之後重複開啟只是顯示同一個視窗，內容/已選取狀態會保留）
+    void buildKeySetDataSetDialog();
 
     // ── 日誌外觀設定 ────────────────────────────────────────────────────────
     int m_logFontSize = 11;            // px
@@ -482,6 +490,13 @@ private:
     QLabel* m_dataSetValueLbl = nullptr;     // 目前選取的 Data Set 內容顯示
     QList<DataSetEntry> m_dataSetEntries;    // 已載入的 Data Set 資料
     WriteRecordTacFields m_writeRecordTacFields;   // Write Record With TAC
+
+    // Key Set / Data Set 管理視窗（改由選單「設定 → Key Set / Data Set 管理...」開啟，
+    // 不再放在「卡片指令」頁籤裡；視窗本身只建立一次，重複開啟只是喚起同一個視窗）
+    QDialog* m_keySetDataSetDialog = nullptr;
+    // 「卡片指令」頁籤 Card Authentication 區塊裡的唯讀狀態顯示，
+    // 讓使用者不用開啟管理視窗也能看到目前套用的 Key Set 內容
+    QLabel* m_caKeySetStatusLbl = nullptr;
 
     // ── 共用 ────────────────────────────────────────────────────────────────
     QTextEdit* m_logEdit = nullptr;

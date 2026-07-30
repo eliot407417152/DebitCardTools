@@ -21,6 +21,7 @@ private slots:
     void onBackToSelectReader();   // 返回「選擇讀卡機」頁面(選單「程式→返回偵測頁面」與頁面內的返回按鈕共用)
     void onEditWindowSize();       // 設定選單：視窗大小設定
     void onEditLogAppearance();    // 設定選單：日誌字體大小/行距設定
+    void onOpenKeySetDataSetManager(); // 設定選單：Key Set / Data Set 管理
 
 private:
     void buildMenuBar();

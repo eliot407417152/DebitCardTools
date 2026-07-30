@@ -65,6 +65,10 @@ void MainWindow::buildMenuBar()
     QAction* logAppearanceAct = settingMenu->addAction(QStringLiteral("日誌顯示設定(&L)..."));
     connect(logAppearanceAct, &QAction::triggered, this, &MainWindow::onEditLogAppearance);
 
+    settingMenu->addSeparator();
+    QAction* keyDataSetAct = settingMenu->addAction(QStringLiteral("Key Set / Data Set 管理(&K)..."));
+    connect(keyDataSetAct, &QAction::triggered, this, &MainWindow::onOpenKeySetDataSetManager);
+
     QMenu* programMenu = menuBar()->addMenu(QStringLiteral("程式(&P)"));
     QAction* backAct = programMenu->addAction(QStringLiteral("返回偵測頁面(&B)"));
     connect(backAct, &QAction::triggered, this, &MainWindow::onBackToSelectReader);
@@ -268,6 +272,20 @@ void MainWindow::onEditLogAppearance()
     QMessageBox::information(this, QStringLiteral("完成"),
         QStringLiteral("日誌顯示設定已儲存：字體 %1px、行距 %2%\n下次進入操作工作區頁面會直接套用。")
         .arg(fontSize).arg(lineSpacing));
+}
+
+// Key Set / Data Set 管理視窗實際內容（載入按鈕、下拉選單…）屬於「操作工作區」頁面
+// (PageCardOperation) 的資料，因此只有已經選好讀卡機、進入操作工作區後才能開啟；
+// 若還在「選擇讀卡機」頁面就點選單，提示使用者先選讀卡機。
+void MainWindow::onOpenKeySetDataSetManager()
+{
+    if (!m_opPage) {
+        QMessageBox::information(this, QStringLiteral("Key Set / Data Set 管理"),
+            QStringLiteral("請先選擇讀卡機、進入操作工作區後，才能開啟 Key Set / Data Set 管理視窗。"));
+        return;
+    }
+
+    m_opPage->openKeySetDataSetManager();
 }
 
 void MainWindow::applyLogSettingsToOperationPage()
