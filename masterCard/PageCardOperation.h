@@ -9,6 +9,8 @@
 #include "IsamKeyChecker.h"   // CustomerData / KeyCheckResult
 #include "CardWasher.h"       // 洗卡
 #include "CardIssuer.h"       // 發卡
+#include "KeySetLoader.h"     // Card Authentication 用：外部 Key Set 檔案
+#include "DataSetLoader.h"    // 外部 Data Set 檔案
 
 class QLineEdit;
 class QPushButton;
@@ -216,13 +218,14 @@ struct UpdateRecordCipheredFields
 };
 
 // 卡片指令 — Card Authentication
-//   P2 為自行輸入的 Kq（不做左移運算），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
-// 卡片指令 — Card Authentication
 //   P2 由 Kq 邏輯左移 3 位運算（比照 Set Session Key 作法），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
 //   回應（DataOut，16 bytes）= [MAC 8 bytes][R2 8 bytes]
-//   驗證用的 Key 由使用者於 manualKey 欄位自行輸入；若該欄位填寫則直接使用該值，
-//   不再自動向 ISAM 索取（僅在 manualKey 留空時，才會向 ISAM 送 Get Key Check Code, P1=25 取得 Key），
-//   計算 DES(DES(DES(Key,R1),R2),R3) 並與回應的 MAC（前 8 bytes）比對
+//   驗證用的 Key（K，卡片認證基碼）改由「Key Set」選取：需先載入外部 Key Set 檔案
+//   （格式見 KeySetLoader.h），執行前於下拉選單選擇要用的那一筆，直接使用該筆的金鑰本體，
+//   不再向 ISAM 查詢或自行輸入。
+//   計算 R = E(DES)(E(DES)(E(DES/3DES)(K,R1),R2),R3) 並與回應的 MAC（前 8 bytes）比對
+//   K 可能是 8/16/24 bytes（單/雙/三長度金鑰），第一步依長度自動判斷單一 DES 或 3DES，
+//   第二、三步固定為單一 DES（S 與中間結果恆為 8 bytes）
 struct CardAuthFields
 {
     QLineEdit* cla = nullptr;
@@ -235,7 +238,6 @@ struct CardAuthFields
 
     QLineEdit* r1 = nullptr;    // R1（8 bytes，自行輸入）
     QLineEdit* r3 = nullptr;    // R3（8 bytes，自行輸入）
-    QLineEdit* manualKey = nullptr;   // Key（自行輸入；若填寫則直接使用，不再向 ISAM 索取）
 
     QString computedP2() const;
     QString buildApdu() const;
@@ -339,6 +341,11 @@ private slots:
     void onGenerateRandomCard();
     void onCardAuthentication();
     void onUpdateCardAuthP2();
+    void onLoadKeySet();
+    void onKeySetIdApply();
+    void onKeySetSelectionChanged(int index);
+    void onLoadDataSet();
+    void onDataSetSelectionChanged(int index);
     void onWriteRecordWithTacLcUpdate();
     void onWriteRecordWithTac();
     void onExportLog();
@@ -376,6 +383,12 @@ private:
     CustomerData collectDataFromFields() const;
 
     void log(const QString& msg, bool isError = false);
+
+    // 嘗試從程式所在目錄自動載入 KeySet.txt / DataSet.txt（找不到就靜默略過，
+    // 使用者仍可透過「載入」按鈕手動指定檔案）
+    void autoLoadKeySetAndDataSet();
+    void populateKeySetCombo();
+    void populateDataSetCombo();
 
     // ── 日誌外觀設定 ────────────────────────────────────────────────────────
     int m_logFontSize = 11;            // px
@@ -455,7 +468,19 @@ private:
     IsamSimpleFields m_readBinaryFields;   // Read Binary：CLA/INS/P1 固定，P2/Le 自行輸入
     IsamSimpleFields m_generateRandomCardFields;   // Generate Random Number：CLA/INS/P1/P2/Le 固定
     CardAuthFields m_cardAuthFields;   // Card Authentication
-    QComboBox* m_cardAuthIsamReaderCombo = nullptr;   // Card Authentication：取得 Key 用的 ISAM 讀卡機
+    QComboBox* m_keySetCombo = nullptr;      // Key Set 選擇（Card Authentication 用的 K）
+    QPushButton* m_loadKeySetBtn = nullptr;  // 重新載入 Key Set 檔案
+    QLabel* m_keySetFileLbl = nullptr;       // 目前已載入的 Key Set 檔名
+    QList<KeySetEntry> m_keySetEntries;      // 已載入的 Key Set 資料
+    QLineEdit* m_keySetIdEdit = nullptr;     // 依 ID 查詢用的輸入欄位
+    QPushButton* m_keySetApplyBtn = nullptr; // 依 ID 套用
+    QLabel* m_keySetValueLbl = nullptr;      // 顯示目前選取項目對應的 Set Key
+
+    QComboBox* m_dataSetCombo = nullptr;     // Data Set 檢視
+    QPushButton* m_loadDataSetBtn = nullptr; // 載入 Data Set 檔案
+    QLabel* m_dataSetFileLbl = nullptr;      // 目前已載入的 Data Set 檔名
+    QLabel* m_dataSetValueLbl = nullptr;     // 目前選取的 Data Set 內容顯示
+    QList<DataSetEntry> m_dataSetEntries;    // 已載入的 Data Set 資料
     WriteRecordTacFields m_writeRecordTacFields;   // Write Record With TAC
 
     // ── 共用 ────────────────────────────────────────────────────────────────

@@ -24,6 +24,8 @@
 #include <QListWidget>
 #include <QStackedWidget>
 #include <QSplitter>
+#include <QCoreApplication>
+#include <QDir>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab 3 — 卡片指令（Create / Select / Write / List / Verify Pin / Read Record / Read All Record）
@@ -612,25 +614,63 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     caLay->addWidget(caR3Lbl);
     caLay->addWidget(m_cardAuthFields.r3);
 
-    auto* caKeyLbl = new QLabel("Key（自行輸入，8 bytes / 16 個 HEX 字元；若填寫則優先使用，不再向 ISAM 索取）：", caGrp);
-    caKeyLbl->setStyleSheet("font-weight:bold; font-size:11px;");
-    m_cardAuthFields.manualKey = makeEditField(caGrp, false);
-    m_cardAuthFields.manualKey->setPlaceholderText("留空則自動向下方 ISAM 讀卡機取得 Key（Get Key Check Code）");
-    caLay->addWidget(caKeyLbl);
-    caLay->addWidget(m_cardAuthFields.manualKey);
+    auto* caKeySetGrp = new QGroupBox("Key Set（Card Authentication 用的 K）", caGrp);
+    auto* caKeySetLay = new QVBoxLayout(caKeySetGrp);
 
-    auto* caIsamGrp = new QGroupBox("取得 Key 用的 ISAM 讀卡機（Key 欄位留空時才會使用）", caGrp);
-    auto* caIsamForm = new QFormLayout(caIsamGrp);
-    m_cardAuthIsamReaderCombo = new QComboBox(caIsamGrp);
-    m_cardAuthIsamReaderCombo->addItems(m_readers);
-    caIsamForm->addRow("ISAM 讀卡機：", m_cardAuthIsamReaderCombo);
-    caLay->addWidget(caIsamGrp);
+    auto* caKeySetBtnRow = new QHBoxLayout();
+    m_loadKeySetBtn = new QPushButton("📂 重新載入 Key Set 檔案", caKeySetGrp);
+    m_loadKeySetBtn->setStyleSheet(
+        "QPushButton { background:#455A64; color:white; padding:6px 12px; font-weight:bold; border-radius:4px; }");
+    m_keySetFileLbl = new QLabel("尚未載入", caKeySetGrp);
+    m_keySetFileLbl->setStyleSheet("color:#888; font-style:italic;");
+    caKeySetBtnRow->addWidget(m_loadKeySetBtn);
+    caKeySetBtnRow->addWidget(m_keySetFileLbl, 1);
+    caKeySetLay->addLayout(caKeySetBtnRow);
+
+    m_keySetCombo = new QComboBox(caKeySetGrp);
+    m_keySetCombo->addItem("── 尚未載入 Key Set 檔案 ──");
+    caKeySetLay->addWidget(m_keySetCombo);
+
+    auto* caKeySetIdRow = new QHBoxLayout();
+    auto* caKeySetIdLbl = new QLabel("依 ID 查詢：", caKeySetGrp);
+    caKeySetIdLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_keySetIdEdit = makeEditField(caKeySetGrp, false);
+    m_keySetIdEdit->setPlaceholderText("輸入 ID，例如 05");
+    m_keySetApplyBtn = new QPushButton("套用", caKeySetGrp);
+    caKeySetIdRow->addWidget(caKeySetIdLbl);
+    caKeySetIdRow->addWidget(m_keySetIdEdit);
+    caKeySetIdRow->addWidget(m_keySetApplyBtn);
+    caKeySetLay->addLayout(caKeySetIdRow);
+
+    auto* caSetKeyLbl = new QLabel("Set Key（目前選取項目的金鑰本體）：", caKeySetGrp);
+    caSetKeyLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_keySetValueLbl = new QLabel("—", caKeySetGrp);
+    m_keySetValueLbl->setWordWrap(true);
+    m_keySetValueLbl->setStyleSheet(
+        "QLabel { background:#EEEEEE; color:#333; font-family:'Courier New'; "
+        "padding:4px 8px; border:1px solid #CCC; border-radius:3px; }");
+    caKeySetLay->addWidget(caSetKeyLbl);
+    caKeySetLay->addWidget(m_keySetValueLbl);
+
+    auto* caKeySetHint = new QLabel(
+        "Key Set 檔案（KeySet.txt）預設放在程式所在目錄，啟動時會自動嘗試載入；"
+        "也可以用上方按鈕重新指定檔案。輸入 ID 按「套用」即可直接切換到對應項目，"
+        "其金鑰本體就是公式裡的 K（卡片認證基碼），不再向 ISAM 查詢或自行輸入。", caKeySetGrp);
+    caKeySetHint->setWordWrap(true);
+    caKeySetHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    caKeySetLay->addWidget(caKeySetHint);
+
+    caLay->addWidget(caKeySetGrp);
+
+    connect(m_loadKeySetBtn, &QPushButton::clicked, this, &PageCardOperation::onLoadKeySet);
+    connect(m_keySetApplyBtn, &QPushButton::clicked, this, &PageCardOperation::onKeySetIdApply);
+    connect(m_keySetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this, &PageCardOperation::onKeySetSelectionChanged);
 
     auto* caVerifyHint = new QLabel(
         "執行後會：① 送出 Card Authentication（DATA=R1+R3），回應 16 bytes 拆成 "
-        "[MAC 前 8 bytes] + [R2 後 8 bytes]；② 取得 Key（若上方 Key 欄位已填寫則直接使用該值，"
-        "否則向下方 ISAM 讀卡機送 Get Key Check Code（82 07 25 00 Le=07）取得）；"
-        "③ 計算 DES(DES(DES(Key,R1),R2),R3) 並與 MAC 比對，"
+        "[MAC 前 8 bytes] + [R2 後 8 bytes]；② 使用上方 Key Set 選取的 K；"
+        "③ 計算 DES(DES(DES(K,R1),R2),R3) 並與 MAC 比對，"
         "結果會顯示 O（正確）或 X（錯誤）。", caGrp);
     caVerifyHint->setWordWrap(true);
     caVerifyHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
@@ -639,6 +679,36 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     auto* caHint = new QLabel("P2 由 Kq 邏輯左移 3 位自動運算（比照 Set Session Key 作法）。DATA = R1 + R3，Lc/Le 固定 10h。", caGrp);
     caHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
     caLay->addWidget(caHint);
+
+    // ── Data Set 檢視（通用測試資料查詢，格式同 Key Set，格式見 DataSetLoader.h）──
+    auto* dataSetGrp = new QGroupBox("Data Set（測試資料檢視，供參考用）", caGrp);
+    auto* dataSetLay = new QVBoxLayout(dataSetGrp);
+
+    auto* dataSetBtnRow = new QHBoxLayout();
+    m_loadDataSetBtn = new QPushButton("📂 載入 Data Set 檔案", dataSetGrp);
+    m_loadDataSetBtn->setStyleSheet(
+        "QPushButton { background:#455A64; color:white; padding:6px 12px; font-weight:bold; border-radius:4px; }");
+    m_dataSetFileLbl = new QLabel("尚未載入", dataSetGrp);
+    m_dataSetFileLbl->setStyleSheet("color:#888; font-style:italic;");
+    dataSetBtnRow->addWidget(m_loadDataSetBtn);
+    dataSetBtnRow->addWidget(m_dataSetFileLbl, 1);
+    dataSetLay->addLayout(dataSetBtnRow);
+
+    m_dataSetCombo = new QComboBox(dataSetGrp);
+    m_dataSetCombo->addItem("── 請先載入 Data Set 檔案 ──");
+    dataSetLay->addWidget(m_dataSetCombo);
+
+    m_dataSetValueLbl = new QLabel("—", dataSetGrp);
+    m_dataSetValueLbl->setStyleSheet(
+        "QLabel { background:#EEEEEE; color:#333; font-family:'Courier New'; "
+        "padding:4px 8px; border:1px solid #CCC; border-radius:3px; }");
+    dataSetLay->addWidget(m_dataSetValueLbl);
+
+    caLay->addWidget(dataSetGrp);
+
+    connect(m_loadDataSetBtn, &QPushButton::clicked, this, &PageCardOperation::onLoadDataSet);
+    connect(m_dataSetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this, &PageCardOperation::onDataSetSelectionChanged);
 
     connect(m_cardAuthFields.pq, &QLineEdit::textChanged,
         this, &PageCardOperation::onUpdateCardAuthP2);
@@ -709,6 +779,7 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     onWriteRecordWithTacLcUpdate();   // 初始化 Lc 顯示
 
     apduCmdList->setCurrentRow(0);
+    //autoLoadKeySetAndDataSet();   // 嘗試自動載入程式目錄下的 KeySet.txt / DataSet.txt
     scroll->setWidget(content);
 
     auto* tabLayout = new QVBoxLayout(tab);
@@ -1289,50 +1360,36 @@ void PageCardOperation::onCardAuthentication()
     }
     log("回應拆解 → MAC（前8 bytes）：" + mac + "　R2（後8 bytes）：" + r2FromResp);
 
-    // 取得 Key：若使用者已於 Key 欄位自行輸入，優先使用該值；
-    // 否則比照舊有邏輯，向 ISAM 送 Get Key Check Code（82 07 25 00 Le=07）取得
-    QString key = m_cardAuthFields.manualKey
-        ? m_cardAuthFields.manualKey->text().trimmed().remove(' ').toUpper()
-        : QString();
-
-    if (!key.isEmpty()) {
-        log("✔ 使用自行輸入的 Key：" + key);
+    // 取得 Key：由「Key Set」下拉選單選取（需先載入 Key Set 檔案）
+    int keySetIdx = m_keySetCombo ? m_keySetCombo->currentIndex() : -1;
+    if (keySetIdx < 0 || keySetIdx >= m_keySetEntries.size()) {
+        log("Error: 尚未載入 Key Set 或尚未選擇要使用的項目，略過驗證。", true);
+        return;
     }
-    else {
-        SCARDHANDLE hIsam = connectReader(
-            m_cardAuthIsamReaderCombo ? m_cardAuthIsamReaderCombo->currentText() : QString());
-        if (hIsam == 0) {
-            log("Error: 無效的 ISAM 卡片控制代碼，無法取得 Key，略過驗證。", true);
-            return;
-        }
-
-        bool isamOk = false;
-        QString keyResp = CardUtils::sendApdu(hIsam, "8207250007", isamOk,
-            [this](const QString& msg, bool err) { log(msg, err); });
-        QString keySw = keyResp.right(4);
-        if (!isamOk || keySw != "9000") {
-            log(QString("Error: [Get Key Check Code] 失敗 (SW=%1)，略過驗證。").arg(keySw), true);
-            return;
-        }
-        key = keyResp.left(qMax(0, keyResp.length() - 4));
-        log("✔ 向 ISAM 取得 Key：" + key);
-    }
+    const KeySetEntry& keySetEntry = m_keySetEntries.at(keySetIdx);
+    QString key = keySetEntry.keyHex;
+    log(QString("✔ 使用 Key Set：%1（KID=%2）Key=%3")
+        .arg(keySetEntry.label, keySetEntry.kid, key));
 
     // 計算 DES(DES(DES(Key,R1),R2),R3)
     QString r1 = m_cardAuthFields.r1 ? m_cardAuthFields.r1->text().trimmed().remove(' ').toUpper() : QString();
     QString r3 = m_cardAuthFields.r3 ? m_cardAuthFields.r3->text().trimmed().remove(' ').toUpper() : QString();
 
-    QString keyV = key.leftJustified(16, 'F').left(16);
+    // K 不強制裁切成 8 bytes——K 可能是 8/16/24 bytes（單/雙/三長度金鑰），
+    // 交給 tripleDesHex 依實際長度判斷要用單一 DES 還是 3DES（對應規格書的 E(DES/3DES)(K,R1)）
+    QString keyV = key;
     QString r1V = r1.leftJustified(16, 'F').left(16);
     QString r2V = r2FromResp.leftJustified(16, 'F').left(16);
     QString r3V = r3.leftJustified(16, 'F').left(16);
 
-    log(QString("驗證用值 → Key：%1　R1：%2　R2：%3　R3：%4")
-        .arg(keyV, r1V, r2V, r3V));
+    log(QString("驗證用值 → Key：%1（%2 bytes）　R1：%3　R2：%4　R3：%5")
+        .arg(keyV).arg(keyV.length() / 2).arg(r1V, r2V, r3V));
 
-    QString step1 = CardUtils::desSingleBlockHex(keyV, r1V, /*encrypt=*/true);   // DES(Key, R1)
-    QString step2 = CardUtils::desSingleBlockHex(step1, r2V, /*encrypt=*/true);  // DES(上一步, R2)
-    QString step3 = CardUtils::desSingleBlockHex(step2, r3V, /*encrypt=*/true);  // DES(上一步, R3)
+    // 第一步 E(DES/3DES)(K, R1)：依 K 長度自動判斷單一 DES 或 3DES
+    QString step1 = CardUtils::tripleDesHex(keyV, r1V);
+    // 第二、三步固定為單一 DES：E(DES)(上一步, R2) → E(DES)(上一步, R3)
+    QString step2 = CardUtils::desSingleBlockHex(step1, r2V, /*encrypt=*/true);  // S = E(DES)(step1, R2)
+    QString step3 = CardUtils::desSingleBlockHex(step2, r3V, /*encrypt=*/true);  // R = E(DES)(S, R3)
 
     log(QString("驗證計算 DES(DES(DES(Key,R1),R2),R3)　R1=%1　R3=%2　結果 = %3")
         .arg(r1V, r3V, step3));
@@ -1341,6 +1398,158 @@ void PageCardOperation::onCardAuthentication()
         log("驗證結果：O（正確，與 MAC 一致）");
     else
         log(QString("驗證結果：X（錯誤！計算值 %1 與 MAC %2 不一致）").arg(step3, mac), true);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Key Set / Data Set：自動載入 + 手動載入 + 下拉選單同步 + 依 ID 查詢
+// ─────────────────────────────────────────────────────────────────────────────
+void PageCardOperation::autoLoadKeySetAndDataSet()
+{
+    QString appDir = QCoreApplication::applicationDirPath();
+
+    QString keySetPath = appDir + "/KeySet.txt";
+    if (QFile::exists(keySetPath)) {
+        QStringList warnings;
+        if (KeySetLoader::load(keySetPath, m_keySetEntries, &warnings)) {
+            if (m_keySetFileLbl) {
+                m_keySetFileLbl->setText("✔ 已自動載入：" + keySetPath);
+                m_keySetFileLbl->setStyleSheet("color:#2E7D32; font-weight:bold;");
+            }
+            populateKeySetCombo();
+            log("✔ 自動載入 Key Set：" + keySetPath);
+            for (const auto& w : warnings) log("⚠️ Key Set：" + w, true);
+        }
+    }
+
+    QString dataSetPath = appDir + "/DataSet.txt";
+    if (QFile::exists(dataSetPath)) {
+        QStringList warnings;
+        if (DataSetLoader::load(dataSetPath, m_dataSetEntries, &warnings)) {
+            if (m_dataSetFileLbl) {
+                m_dataSetFileLbl->setText("✔ 已自動載入：" + dataSetPath);
+                m_dataSetFileLbl->setStyleSheet("color:#2E7D32; font-weight:bold;");
+            }
+            populateDataSetCombo();
+            log("✔ 自動載入 Data Set：" + dataSetPath);
+            for (const auto& w : warnings) log("⚠️ Data Set：" + w, true);
+        }
+    }
+}
+
+void PageCardOperation::populateKeySetCombo()
+{
+    if (!m_keySetCombo) return;
+    m_keySetCombo->blockSignals(true);
+    m_keySetCombo->clear();
+    if (m_keySetEntries.isEmpty()) {
+        m_keySetCombo->addItem("── 尚未載入 Key Set 檔案 ──");
+    }
+    else {
+        for (const auto& e : m_keySetEntries)
+            m_keySetCombo->addItem(e.displayText());
+    }
+    m_keySetCombo->blockSignals(false);
+    onKeySetSelectionChanged(m_keySetCombo->currentIndex());
+}
+
+void PageCardOperation::populateDataSetCombo()
+{
+    if (!m_dataSetCombo) return;
+    m_dataSetCombo->blockSignals(true);
+    m_dataSetCombo->clear();
+    if (m_dataSetEntries.isEmpty()) {
+        m_dataSetCombo->addItem("── 尚未載入 Data Set 檔案 ──");
+    }
+    else {
+        for (const auto& e : m_dataSetEntries)
+            m_dataSetCombo->addItem(e.displayText());
+    }
+    m_dataSetCombo->blockSignals(false);
+    onDataSetSelectionChanged(m_dataSetCombo->currentIndex());
+}
+
+void PageCardOperation::onLoadKeySet()
+{
+    QString path = QFileDialog::getOpenFileName(this, "載入 Key Set 檔案",
+        QCoreApplication::applicationDirPath(), "文字檔 (*.txt);;所有檔案 (*.*)");
+    if (path.isEmpty()) return;
+
+    QStringList warnings;
+    if (!KeySetLoader::load(path, m_keySetEntries, &warnings)) {
+        QMessageBox::critical(this, "載入失敗", "無法開啟檔案，請確認路徑或格式。");
+        return;
+    }
+
+    if (m_keySetFileLbl) {
+        m_keySetFileLbl->setText("✔ " + path);
+        m_keySetFileLbl->setStyleSheet("color:#2E7D32; font-weight:bold;");
+    }
+    populateKeySetCombo();
+
+    log("✔ Key Set 載入完成：" + path + QString("（共 %1 筆）").arg(m_keySetEntries.size()));
+    for (const auto& w : warnings) log("⚠️ Key Set：" + w, true);
+}
+
+void PageCardOperation::onKeySetIdApply()
+{
+    QString id = m_keySetIdEdit ? m_keySetIdEdit->text().trimmed() : QString();
+    if (id.isEmpty()) {
+        log("請先輸入要查詢的 ID。", true);
+        return;
+    }
+
+    for (int i = 0; i < m_keySetEntries.size(); ++i) {
+        if (m_keySetEntries.at(i).id.compare(id, Qt::CaseInsensitive) == 0) {
+            m_keySetCombo->setCurrentIndex(i);   // 觸發 onKeySetSelectionChanged 更新顯示
+            log(QString("✔ 依 ID=%1 套用 Key Set：%2").arg(id, m_keySetEntries.at(i).displayText()));
+            return;
+        }
+    }
+    log(QString("找不到 ID=%1 對應的 Key Set 項目，請確認已載入正確檔案。").arg(id), true);
+}
+
+void PageCardOperation::onKeySetSelectionChanged(int index)
+{
+    if (!m_keySetValueLbl) return;
+    if (index < 0 || index >= m_keySetEntries.size()) {
+        m_keySetValueLbl->setText("—");
+        return;
+    }
+    const KeySetEntry& e = m_keySetEntries.at(index);
+    m_keySetValueLbl->setText(e.keyHex);
+    if (m_keySetIdEdit) m_keySetIdEdit->setText(e.id);
+}
+
+void PageCardOperation::onLoadDataSet()
+{
+    QString path = QFileDialog::getOpenFileName(this, "載入 Data Set 檔案",
+        QCoreApplication::applicationDirPath(), "文字檔 (*.txt);;所有檔案 (*.*)");
+    if (path.isEmpty()) return;
+
+    QStringList warnings;
+    if (!DataSetLoader::load(path, m_dataSetEntries, &warnings)) {
+        QMessageBox::critical(this, "載入失敗", "無法開啟檔案，請確認路徑或格式。");
+        return;
+    }
+
+    if (m_dataSetFileLbl) {
+        m_dataSetFileLbl->setText("✔ " + path);
+        m_dataSetFileLbl->setStyleSheet("color:#2E7D32; font-weight:bold;");
+    }
+    populateDataSetCombo();
+
+    log("✔ Data Set 載入完成：" + path + QString("（共 %1 筆）").arg(m_dataSetEntries.size()));
+    for (const auto& w : warnings) log("⚠️ Data Set：" + w, true);
+}
+
+void PageCardOperation::onDataSetSelectionChanged(int index)
+{
+    if (!m_dataSetValueLbl) return;
+    if (index < 0 || index >= m_dataSetEntries.size()) {
+        m_dataSetValueLbl->setText("—");
+        return;
+    }
+    m_dataSetValueLbl->setText(m_dataSetEntries.at(index).dataHex);
 }
 
 void PageCardOperation::onWriteRecordWithTacLcUpdate()
