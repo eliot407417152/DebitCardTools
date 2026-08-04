@@ -447,3 +447,28 @@ QString WriteRecordTacFields::buildApdu() const
         + leV;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WriteRecordWSNumTacFields — buildApdu
+//   CLA 固定 00 / INS 固定 E6，P1、P2、Lc、DATA 皆自行輸入，Le 固定 00
+// ─────────────────────────────────────────────────────────────────────────────
+QString WriteRecordWSNumTacFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    QString dataV = get(data);
+    QString lcV = get(lc).isEmpty()
+        ? QString("%1").arg(dataV.length() / 2, 2, 16, QChar('0')).toUpper()
+        : get(lc).leftJustified(2, '0').left(2);
+    QString leV = get(le).isEmpty() ? QString("00") : get(le).leftJustified(2, '0').left(2);
+
+    return get(cla).leftJustified(2, '0').left(2)
+        + get(ins).leftJustified(2, '0').left(2)
+        + get(p1).leftJustified(2, '0').left(2)
+        + get(p2).leftJustified(2, '0').left(2)
+        + lcV
+        + dataV
+        + leV;
+}
+

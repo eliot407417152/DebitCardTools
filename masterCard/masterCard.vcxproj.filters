@@ -82,6 +82,12 @@
     <ClCompile Include="PageCardOperation_Fields.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataSetLoader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="KeySetLoader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CardUtils.h">
@@ -112,6 +118,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataSetLoader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="KeySetLoader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

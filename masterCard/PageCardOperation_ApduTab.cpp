@@ -100,9 +100,11 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     auto* selModeRow = new QHBoxLayout();
     auto* selEfRadio = new QRadioButton("Select EF（P1=02）", content);
     auto* selDfRadio = new QRadioButton("Select DF（P1=01）", content);
+    auto* selPfRadio = new QRadioButton("Select PF（P1=03）", content);
     selEfRadio->setChecked(true);
     selModeRow->addWidget(selEfRadio);
     selModeRow->addWidget(selDfRadio);
+    selModeRow->addWidget(selPfRadio);
     selModeRow->addStretch();
 
     auto* selectBtn = new QPushButton("▶ 執行 Select File", content);
@@ -117,12 +119,25 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     addApduCmdPage(selectGrp, "② Select File");
 
     connect(selEfRadio, &QRadioButton::toggled, this, [this, selEfRadio]() {
-        if (selEfRadio->isChecked() && m_selectFields.p1)
-            m_selectFields.p1->setText("02");
+        if (selEfRadio->isChecked()) {
+            if (m_selectFields.p1) m_selectFields.p1->setText("02");
+            if (m_selectFields.lc) m_selectFields.lc->setText("02"); 
+        }
         });
+
     connect(selDfRadio, &QRadioButton::toggled, this, [this, selDfRadio]() {
-        if (selDfRadio->isChecked() && m_selectFields.p1)
-            m_selectFields.p1->setText("01");
+        if (selDfRadio->isChecked()) {
+            if (m_selectFields.p1) m_selectFields.p1->setText("01");
+            if (m_selectFields.lc) m_selectFields.lc->setText("02"); 
+        }
+        });
+
+    connect(selPfRadio, &QRadioButton::toggled, this, [this, selPfRadio]() {
+        if (selPfRadio->isChecked()) {
+            if (m_selectFields.p1) m_selectFields.p1->setText("03");
+            if (m_selectFields.lc) m_selectFields.lc->clear();     
+            if (m_selectFields.dataIn) m_selectFields.dataIn->clear(); 
+        }
         });
 
     // ── List File ──
@@ -718,6 +733,59 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     addApduCmdPage(wrtGrp, "⑭ Write Record With TAC");
     connect(wrtBtn, &QPushButton::clicked, this, &PageCardOperation::onWriteRecordWithTac);
     onWriteRecordWithTacLcUpdate();   // 初始化 Lc 顯示
+
+    // ── ⑮ Write Record With S/N TAC ──────────────────────────────────────────
+    auto* wrtSnGrp = new QGroupBox("⑮ Write Record With S/N TAC", content);
+    auto* wrtSnLay = new QVBoxLayout(wrtSnGrp);
+    auto* wrtSnRow = new QHBoxLayout();
+    auto addWrtSnCol = [&](QLineEdit*& outField, const QString& lbl,
+        const QString& def, int maxLen, bool ro) {
+            auto* col = new QVBoxLayout();
+            auto* l = new QLabel(lbl, wrtSnGrp);
+            l->setAlignment(Qt::AlignCenter);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeHexField(wrtSnGrp, maxLen);
+            outField->setText(def);
+            outField->setReadOnly(ro);
+            if (ro) {
+                outField->setStyleSheet(
+                    "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+                    "font-weight:bold; font-size:12px; padding:4px; "
+                    "border:1px dashed #AAA; border-radius:3px; }");
+            }
+            col->addWidget(l);
+            col->addWidget(outField);
+            wrtSnRow->addLayout(col);
+        };
+
+    addWrtSnCol(m_writeRecordWSNumTacFields.cla, "CLA", "00", 2, true);
+    addWrtSnCol(m_writeRecordWSNumTacFields.ins, "INS", "E2", 2, true);
+    addWrtSnCol(m_writeRecordWSNumTacFields.p1, "P1（自行輸入）", "", 2, false);
+    addWrtSnCol(m_writeRecordWSNumTacFields.p2, "P2（自行輸入）", "", 2, false);
+    addWrtSnCol(m_writeRecordWSNumTacFields.lc, "Lc（自行輸入）", "", 2, false);
+    addWrtSnCol(m_writeRecordWSNumTacFields.le, "Le", "00", 2, true);
+    wrtSnRow->addStretch();
+    wrtSnLay->addLayout(wrtSnRow);
+
+    auto* wrtSnDataLbl = new QLabel("DATA（自行輸入）：", wrtSnGrp);
+    wrtSnDataLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_writeRecordWSNumTacFields.data = makeEditField(wrtSnGrp, false);
+    m_writeRecordWSNumTacFields.data->setPlaceholderText("輸入 DATA 的 HEX 字元");
+    wrtSnLay->addWidget(wrtSnDataLbl);
+    wrtSnLay->addWidget(m_writeRecordWSNumTacFields.data);
+
+    auto* wrtSnHint = new QLabel(
+        "固定：CLA=00  INS=E6  Le=00\nP1 / P2 / Lc / DATA 皆自行輸入。", wrtSnGrp);
+    wrtSnHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    wrtSnLay->addWidget(wrtSnHint);
+
+    auto* wrtSnBtn = new QPushButton("▶ 執行 Write Record With S/N TAC", wrtSnGrp);
+    wrtSnBtn->setStyleSheet(
+        "QPushButton { background:#EF6C00; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    wrtSnLay->addWidget(wrtSnBtn);
+    addApduCmdPage(wrtSnGrp, "⑮ Write Record With S/N TAC");
+    connect(wrtSnBtn, &QPushButton::clicked, this, &PageCardOperation::onWriteRecordWSNumTac);
 
     apduCmdList->setCurrentRow(0);
     // Key Set / Data Set 的建立與自動載入，改到建構子裡（buildKeySetDataSetDialog() +
@@ -1676,5 +1744,36 @@ void PageCardOperation::onWriteRecordWithTac()
     }
     else {
         log("⚠️ Write Record With TAC SW=" + sw, true);
+    }
+}
+
+void PageCardOperation::onWriteRecordWSNumTac()
+{
+    if (m_writeRecordWSNumTacFields.data &&
+        m_writeRecordWSNumTacFields.data->text().trimmed().isEmpty()) {
+        log("[Write Record With S/N TAC] 請先輸入 DATA", true);
+        return;
+    }
+
+    QString apdu = m_writeRecordWSNumTacFields.buildApdu();
+    if (apdu.length() < 10) {
+        log("[Write Record With S/N TAC] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Write Record With S/N TAC ======");
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Write Record With S/N TAC] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    QString data = resp.left(qMax(0, resp.length() - 4));
+    if (sw == "9000") {
+        log("✔ Write Record With S/N TAC 成功 SW=9000");
+        log("Data: " + (data.isEmpty() ? QString("(空)") : data));
+    }
+    else {
+        log("⚠️ Write Record With S/N TAC SW=" + sw, true);
     }
 }

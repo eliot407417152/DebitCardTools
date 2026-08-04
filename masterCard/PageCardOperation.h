@@ -261,6 +261,22 @@ struct WriteRecordTacFields
     QString buildApdu() const;
 };
 
+// 卡片指令 — Write Record With S/N TAC
+//   CLA 固定 00 / INS 固定 E6，P1、P2、Lc、DATA 皆自行輸入，Le 固定 00
+struct WriteRecordWSNumTacFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;     // 自行輸入
+    QLineEdit* p2 = nullptr;     // 自行輸入
+    QLineEdit* lc = nullptr;     // 自行輸入
+    QLineEdit* le = nullptr;
+
+    QLineEdit* data = nullptr;   // DATA（自行輸入）
+
+    QString buildApdu() const;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PageCardOperation
 //
@@ -353,6 +369,7 @@ private slots:
     void onDataSetSelectionChanged(int index);
     void onWriteRecordWithTacLcUpdate();
     void onWriteRecordWithTac();
+    void onWriteRecordWSNumTac();
     void onExportLog();
     void onClearLog();
 
@@ -490,6 +507,7 @@ private:
     QLabel* m_dataSetValueLbl = nullptr;     // 目前選取的 Data Set 內容顯示
     QList<DataSetEntry> m_dataSetEntries;    // 已載入的 Data Set 資料
     WriteRecordTacFields m_writeRecordTacFields;   // Write Record With TAC
+    WriteRecordWSNumTacFields m_writeRecordWSNumTacFields;   // Write Record With S/N TAC
 
     // Key Set / Data Set 管理視窗（改由選單「設定 → Key Set / Data Set 管理...」開啟，
     // 不再放在「卡片指令」頁籤裡；視窗本身只建立一次，重複開啟只是喚起同一個視窗）
