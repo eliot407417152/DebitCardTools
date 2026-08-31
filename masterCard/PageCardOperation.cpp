@@ -112,10 +112,12 @@ void PageCardOperation::setupUI()
     auto* isamCmdTab = new QWidget();  setupIsamCmdTab(isamCmdTab);
     auto* lodTab = new QWidget();  setupLodTab(lodTab);
     auto* apduTab = new QWidget();  setupApduTab(apduTab);
+    auto* cryptoTab = new QWidget();  setupCryptoTab(cryptoTab);
 
     tabWidget->addTab(isamTab, "🔑 ISAM 金鑰");
     tabWidget->addTab(isamCmdTab, "🔧 ISAM 指令");
     tabWidget->addTab(apduTab, "📡 卡片指令");
+    tabWidget->addTab(cryptoTab, "🔐 加密工具");
     tabWidget->addTab(lodTab, "📇 製卡發卡流程");
 
     // 讀卡機數量不足 2 台：不提供製作母卡功能

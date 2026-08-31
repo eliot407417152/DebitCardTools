@@ -20,6 +20,7 @@ class QComboBox;
 class QVBoxLayout;
 class QGroupBox;
 class QDialog;
+class QRadioButton;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 各功能區塊的欄位集合（維持原本邏輯不變）
@@ -278,6 +279,31 @@ struct WriteRecordWSNumTacFields
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 加密工具 Tab — DES / 3DES 通用計算（ECB / CBC，Key / IV / 資料皆自行輸入）
+// 左側指令清單（DES / 3DES）＋右側各自獨立頁面，比照「卡片指令」頁籤的呈現方式
+// ─────────────────────────────────────────────────────────────────────────────
+struct CryptoToolFields
+{
+    // ── DES 頁面 ──
+    QRadioButton* desModeEcb = nullptr;   // 模式：ECB
+    QRadioButton* desModeCbc = nullptr;   // 模式：CBC
+    QLineEdit* desIv = nullptr;      // IV（僅 CBC 模式可輸入，8 bytes / 16 hex）
+    QLineEdit* desKey = nullptr;     // Key（8 bytes / 16 hex）
+    QLineEdit* desDataIn = nullptr;  // 輸入資料（HEX）
+    QLineEdit* desDataOut = nullptr; // 計算結果（HEX，唯讀）
+
+    // ── 3DES 頁面 ──
+    QRadioButton* tdesModeEcb = nullptr;  // 模式：ECB
+    QRadioButton* tdesModeCbc = nullptr;  // 模式：CBC
+    QLineEdit* tdesIv = nullptr;     // IV（僅 CBC 模式可輸入，8 bytes / 16 hex）
+    QLineEdit* tdesK1 = nullptr;     // K1（8 bytes / 16 hex）
+    QLineEdit* tdesK2 = nullptr;     // K2（8 bytes / 16 hex）
+    QLineEdit* tdesK3 = nullptr;     // K3（8 bytes / 16 hex，留空＝雙長度 3DES：K1,K2,K1）
+    QLineEdit* tdesDataIn = nullptr;  // 輸入資料（HEX）
+    QLineEdit* tdesDataOut = nullptr; // 計算結果（HEX，唯讀）
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PageCardOperation
 //
 //【已依需求調整】
@@ -373,12 +399,19 @@ private slots:
     void onExportLog();
     void onClearLog();
 
+    // 加密工具 Tab
+    void onCryptoDesEncrypt();
+    void onCryptoDesDecrypt();
+    void onCryptoTdesEncrypt();
+    void onCryptoTdesDecrypt();
+
 private:
     void setupUI();
     void setupIsamTab(QWidget* tab);
     void setupIsamCmdTab(QWidget* tab);
     void setupLodTab(QWidget* tab);
     void setupApduTab(QWidget* tab);
+    void setupCryptoTab(QWidget* tab);
     QGroupBox* setupCreateFileGroup(QWidget* parent, QVBoxLayout* layout);
 
     QGroupBox* makeApduGroup(QWidget* parent,
@@ -405,6 +438,9 @@ private:
     CustomerData collectDataFromFields() const;
 
     void log(const QString& msg, bool isError = false);
+
+    // 加密工具：DES/3DES 共用計算邏輯（isDes=false 代表 3DES）
+    void cryptoCalculate(bool isDes, bool encrypt);
 
     // 嘗試從程式所在目錄自動載入 KeySet.txt / DataSet.txt（找不到就靜默略過，
     // 使用者仍可透過「載入」按鈕手動指定檔案）
@@ -515,6 +551,9 @@ private:
     // 「卡片指令」頁籤 Card Authentication 區塊裡的唯讀狀態顯示，
     // 讓使用者不用開啟管理視窗也能看到目前套用的 Key Set 內容
     QLabel* m_caKeySetStatusLbl = nullptr;
+
+    // ── 加密工具 Tab ────────────────────────────────────────────────────────
+    CryptoToolFields m_cryptoFields;
 
     // ── 共用 ────────────────────────────────────────────────────────────────
     QTextEdit* m_logEdit = nullptr;

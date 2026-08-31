@@ -115,6 +115,7 @@
     <ClCompile Include="MasterCardUpdater.cpp" />
     <ClCompile Include="PageCardOperation.cpp" />
     <ClCompile Include="PageCardOperation_ApduTab.cpp" />
+    <ClCompile Include="PageCardOperation_CryptoTab.cpp" />
     <ClCompile Include="PageCardOperation_Fields.cpp">
       <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">input</DynamicSource>
       <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename).moc</QtMocFileName>

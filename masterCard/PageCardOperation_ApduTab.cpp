@@ -121,22 +121,22 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     connect(selEfRadio, &QRadioButton::toggled, this, [this, selEfRadio]() {
         if (selEfRadio->isChecked()) {
             if (m_selectFields.p1) m_selectFields.p1->setText("02");
-            if (m_selectFields.lc) m_selectFields.lc->setText("02"); 
+            if (m_selectFields.lc) m_selectFields.lc->setText("02");
         }
         });
 
     connect(selDfRadio, &QRadioButton::toggled, this, [this, selDfRadio]() {
         if (selDfRadio->isChecked()) {
             if (m_selectFields.p1) m_selectFields.p1->setText("01");
-            if (m_selectFields.lc) m_selectFields.lc->setText("02"); 
+            if (m_selectFields.lc) m_selectFields.lc->setText("02");
         }
         });
 
     connect(selPfRadio, &QRadioButton::toggled, this, [this, selPfRadio]() {
         if (selPfRadio->isChecked()) {
             if (m_selectFields.p1) m_selectFields.p1->setText("03");
-            if (m_selectFields.lc) m_selectFields.lc->clear();     
-            if (m_selectFields.dataIn) m_selectFields.dataIn->clear(); 
+            if (m_selectFields.lc) m_selectFields.lc->clear();
+            if (m_selectFields.dataIn) m_selectFields.dataIn->clear();
         }
         });
 
@@ -773,6 +773,28 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     m_writeRecordWSNumTacFields.data->setPlaceholderText("輸入 DATA 的 HEX 字元");
     wrtSnLay->addWidget(wrtSnDataLbl);
     wrtSnLay->addWidget(m_writeRecordWSNumTacFields.data);
+
+    // 依 Lc（HEX，代表 bytes 數）動態限制 DATA 最多可輸入的 HEX 字元數
+    // 例：Lc=1C（28 bytes）→ DATA 最多輸入 56 個 HEX 字元；Lc=08（8 bytes）→ 最多 16 個 HEX 字元
+    auto updateWrtSnDataMaxLen = [this]() {
+        if (!m_writeRecordWSNumTacFields.lc || !m_writeRecordWSNumTacFields.data) return;
+        QString lcText = m_writeRecordWSNumTacFields.lc->text().trimmed().remove(' ').toUpper();
+        bool ok = false;
+        int lcByteCount = lcText.toInt(&ok, 16);
+        if (!ok || lcText.length() != 2) {
+            // Lc 尚未輸入完整（2 個 HEX 字元），暫不限制 DATA 長度
+            m_writeRecordWSNumTacFields.data->setMaxLength(32767);
+            m_writeRecordWSNumTacFields.data->setPlaceholderText("請先輸入 Lc，決定 DATA 可輸入的長度");
+            return;
+        }
+        int maxHexChars = lcByteCount * 2;
+        m_writeRecordWSNumTacFields.data->setMaxLength(maxHexChars);
+        m_writeRecordWSNumTacFields.data->setPlaceholderText(
+            QString("依 Lc=%1，DATA 需輸入 %2 bytes（%3 個 HEX 字元）")
+            .arg(lcText).arg(lcByteCount).arg(maxHexChars));
+        };
+    connect(m_writeRecordWSNumTacFields.lc, &QLineEdit::textChanged, this, updateWrtSnDataMaxLen);
+    updateWrtSnDataMaxLen();   // 初始化（Lc 尚未輸入，先不限制）
 
     auto* wrtSnHint = new QLabel(
         "固定：CLA=00  INS=E6  Le=00\nP1 / P2 / Lc / DATA 皆自行輸入。", wrtSnGrp);
@@ -1752,6 +1774,24 @@ void PageCardOperation::onWriteRecordWSNumTac()
     if (m_writeRecordWSNumTacFields.data &&
         m_writeRecordWSNumTacFields.data->text().trimmed().isEmpty()) {
         log("[Write Record With S/N TAC] 請先輸入 DATA", true);
+        return;
+    }
+
+    // 檢查 DATA 長度是否與 Lc 宣告的 bytes 數一致
+    QString lcText = m_writeRecordWSNumTacFields.lc
+        ? m_writeRecordWSNumTacFields.lc->text().trimmed().remove(' ').toUpper() : QString();
+    QString dataText = m_writeRecordWSNumTacFields.data
+        ? m_writeRecordWSNumTacFields.data->text().trimmed().remove(' ').toUpper() : QString();
+    bool lcOk = false;
+    int lcByteCount = lcText.toInt(&lcOk, 16);
+    if (!lcOk || lcText.length() != 2) {
+        log("[Write Record With S/N TAC] 請輸入正確的 Lc（2 個 HEX 字元）", true);
+        return;
+    }
+    if (dataText.length() != lcByteCount * 2) {
+        log(QString("[Write Record With S/N TAC] DATA 長度不符：Lc=%1 需要 %2 bytes（%3 個 HEX 字元），"
+            "目前輸入 %4 個 HEX 字元")
+            .arg(lcText).arg(lcByteCount).arg(lcByteCount * 2).arg(dataText.length()), true);
         return;
     }
 

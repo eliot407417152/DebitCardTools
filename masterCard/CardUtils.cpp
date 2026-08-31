@@ -224,3 +224,92 @@ QString CardUtils::generateRandomHex(int numBytes)
     }
     return result;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 「加密工具」頁籤專用：通用 DES / 3DES 對稱加解密（ECB / CBC）
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 單一 8 bytes 區塊運算（key 長度 16/32/48 hex，encrypt/decrypt 互為反運算）
+QString CardUtils::desBlockCipher(const QString& hexKey, const QString& hexBlock16, bool encrypt)
+{
+    if (hexBlock16.length() != 16) return {};
+
+    QString key = hexKey;
+    if (key.length() == 32)          // 2-key 3DES → K1,K2,K1
+        key = key + key.left(16);
+
+    int keyCount = key.length() / 16;
+    if (keyCount != 1 && keyCount != 3) return {};   // 只接受 16 / 32 / 48 hex
+
+    QString data = hexBlock16;
+
+    if (keyCount == 1) {
+        // 單一 DES：encrypt 參數直接對應加密/解密
+        return desSingleBlockHex(key, data, encrypt);
+    }
+
+    // 3DES：加密＝K1 Encrypt → K2 Decrypt → K3 Encrypt（EDE）
+    //       解密＝K3 Decrypt → K2 Encrypt → K1 Decrypt（反序、每段方向相反，即 DED）
+    if (encrypt) {
+        for (int j = 0; j < keyCount; ++j) {
+            QString segKey = key.mid(j * 16, 16);
+            bool segEncrypt = (j % 2 == 0);   // j=0:E  j=1:D  j=2:E
+            data = desSingleBlockHex(segKey, data, segEncrypt);
+        }
+    }
+    else {
+        for (int j = keyCount - 1; j >= 0; --j) {
+            QString segKey = key.mid(j * 16, 16);
+            bool segEncrypt = !(j % 2 == 0);  // 反序且方向相反：j=2→D j=1→E j=0→D
+            data = desSingleBlockHex(segKey, data, segEncrypt);
+        }
+    }
+    return data;
+}
+
+// ECB 模式：逐區塊各自獨立運算
+QString CardUtils::desEcb(const QString& hexKey, const QString& hexData, bool encrypt)
+{
+    if (hexData.isEmpty() || hexData.length() % 16 != 0) return {};
+
+    QString result;
+    for (int i = 0; i + 16 <= hexData.length(); i += 16) {
+        QString block = desBlockCipher(hexKey, hexData.mid(i, 16), encrypt);
+        if (block.isEmpty()) return {};
+        result += block;
+    }
+    return result;
+}
+
+// CBC 模式：區塊間以前一區塊密文（第一區塊用 IV）鏈結
+QString CardUtils::desCbc(const QString& hexKey, const QString& hexIV, const QString& hexData, bool encrypt)
+{
+    if (hexData.isEmpty() || hexData.length() % 16 != 0) return {};
+
+    QString iv = hexIV.trimmed();
+    if (iv.isEmpty()) iv = QString("0000000000000000");
+    if (iv.length() != 16) return {};
+
+    QString result;
+    QString prevCipherBlock = iv;   // 加密：前一區塊密文；解密：前一區塊密文（即本次輸入的前一段）
+
+    for (int i = 0; i + 16 <= hexData.length(); i += 16) {
+        QString block = hexData.mid(i, 16);
+
+        if (encrypt) {
+            QString xored = bytesToHex(xorBytes(hexToBytes(block), hexToBytes(prevCipherBlock)));
+            QString cipher = desBlockCipher(hexKey, xored, true);
+            if (cipher.isEmpty()) return {};
+            result += cipher;
+            prevCipherBlock = cipher;
+        }
+        else {
+            QString decryptedRaw = desBlockCipher(hexKey, block, false);
+            if (decryptedRaw.isEmpty()) return {};
+            QString plain = bytesToHex(xorBytes(hexToBytes(decryptedRaw), hexToBytes(prevCipherBlock)));
+            result += plain;
+            prevCipherBlock = block;   // 本區塊密文成為下一區塊的鏈結值
+        }
+    }
+    return result;
+}

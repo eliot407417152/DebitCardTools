@@ -92,4 +92,25 @@ public:
 
     // 產生指定 bytes 數的隨機 HEX 字串（對應 DESFuc.GetRandom，預設 8 bytes）
     static QString generateRandomHex(int numBytes = 8);
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 「加密工具」頁籤專用：通用 DES / 3DES 對稱加解密（ECB / CBC）
+    // 皆為純 HEX 字串介面，key / data 長度需為區塊大小的整數倍，否則回傳空字串
+    // ─────────────────────────────────────────────────────────────────────
+    // 單一 8 bytes 區塊運算：
+    //   key 長度 16 hex → 單一 DES
+    //   key 長度 32 hex → 2-key 3DES（K1,K2,K1）
+    //   key 長度 48 hex → 3-key 3DES（K1,K2,K3）
+    // encrypt=true 時做 E-D-E（3DES）或單純 Encrypt（DES）；
+    // encrypt=false 時做對應反向的 D-E-D（3DES）或 Decrypt（DES），確保加解密互為反運算
+    static QString desBlockCipher(const QString& hexKey, const QString& hexBlock16, bool encrypt);
+
+    // ECB 模式：資料逐 8 bytes 區塊各自獨立運算（區塊之間互不影響）
+    // hexData 長度需為 16（HEX 字元，即 8 bytes）的整數倍，否則回傳空字串
+    static QString desEcb(const QString& hexKey, const QString& hexData, bool encrypt);
+
+    // CBC 模式：需搭配 8 bytes IV（16 個 HEX 字元；hexIV 空白時視為全 0）
+    // 加密：本區塊明文先與「前一區塊密文（第一區塊用 IV）」XOR，再做區塊加密
+    // 解密：本區塊密文先做區塊解密，再與「前一區塊密文（第一區塊用 IV）」XOR 還原明文
+    static QString desCbc(const QString& hexKey, const QString& hexIV, const QString& hexData, bool encrypt);
 };
