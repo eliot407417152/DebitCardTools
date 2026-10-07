@@ -383,6 +383,27 @@ QString UpdateRecordCipheredFields::buildApdu() const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// UpdateRecordFields::buildApdu — CLA INS P1(RecN) P2 Lc DATA
+//   Lc 依 DATA 實際長度自動計算
+// ─────────────────────────────────────────────────────────────────────────────
+QString UpdateRecordFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    QString dataV = get(data);
+    QString lc = QString("%1").arg(dataV.length() / 2, 2, 16, QChar('0')).toUpper();
+
+    return get(cla).leftJustified(2, '0').left(2)
+        + get(ins).leftJustified(2, '0').left(2)
+        + get(recN).rightJustified(2, '0').right(2)
+        + get(p2).leftJustified(2, '0').left(2)
+        + lc
+        + dataV;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CardAuthFields — buildApdu
 //   P2 為自行輸入的 Kq（不做左移運算），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
 // ─────────────────────────────────────────────────────────────────────────────
@@ -471,4 +492,3 @@ QString WriteRecordWSNumTacFields::buildApdu() const
         + dataV
         + leV;
 }
-

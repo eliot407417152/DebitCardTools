@@ -29,7 +29,7 @@
 #include <QDialog>
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 3 — 卡片指令（Create / Select / Write / List / Verify Pin / Read Record / Read All Record）
+// Tab 3 — 卡片指令（Create / Select / Write / List / Verify Pin / Read Record / Read All Record / Update Record）
 // ─────────────────────────────────────────────────────────────────────────────
 void PageCardOperation::setupApduTab(QWidget* tab)
 {
@@ -809,6 +809,66 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     addApduCmdPage(wrtSnGrp, "⑮ Write Record With S/N TAC");
     connect(wrtSnBtn, &QPushButton::clicked, this, &PageCardOperation::onWriteRecordWSNumTac);
 
+    // ── ⑯ Update Record ─────────────────────────────────────────────────────
+    //   00 D2 RecN 04 Lc Data：更新指定資料檔內一筆既存資料錄（使用前須先 Select File）
+    auto* urGrp = new QGroupBox("⑯ Update Record", content);
+    auto* urLay = new QVBoxLayout(urGrp);
+
+    auto* urRow = new QHBoxLayout();
+    auto addUrCol = [&](QLineEdit*& outField, const QString& lbl,
+        const QString& def, int maxLen, bool ro) {
+            auto* col = new QVBoxLayout();
+            auto* l = new QLabel(lbl, urGrp);
+            l->setAlignment(Qt::AlignCenter);
+            l->setStyleSheet("font-weight:bold; font-size:11px;");
+            outField = makeHexField(urGrp, maxLen);
+            outField->setText(def);
+            outField->setReadOnly(ro);
+            if (ro) {
+                outField->setStyleSheet(
+                    "QLineEdit { background:#EEE; color:#555; font-family:'Courier New'; "
+                    "font-weight:bold; font-size:12px; padding:4px; "
+                    "border:1px dashed #AAA; border-radius:3px; }");
+            }
+            col->addWidget(l);
+            col->addWidget(outField);
+            urRow->addLayout(col);
+        };
+
+    addUrCol(m_updateRecordFields.cla, "CLA", "00", 2, true);
+    addUrCol(m_updateRecordFields.ins, "INS", "D2", 2, true);
+    addUrCol(m_updateRecordFields.recN, "P1（RecN）", "", 2, false);
+    addUrCol(m_updateRecordFields.p2, "P2", "04", 2, true);
+    addUrCol(m_updateRecordFields.lcDisplay, "Lc", "", 2, true);
+    urRow->addStretch();
+    urLay->addLayout(urRow);
+
+    auto* urDataLbl = new QLabel("DATA（更新之資料內容，自行輸入）：", urGrp);
+    urDataLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_updateRecordFields.data = makeEditField(urGrp, false);
+    m_updateRecordFields.data->setPlaceholderText("輸入 DATA HEX（最多 FDh = 253 bytes）");
+    urLay->addWidget(urDataLbl);
+    urLay->addWidget(m_updateRecordFields.data);
+
+    auto* urHint = new QLabel(
+        "RecN：資料錄號碼（01h ~ FEh）。Lc 依 DATA 長度自動計算（max FDh bytes）。\n"
+        "使用前須先執行 Select File。不得用於 Transaction EF、Special Value EF 及交易授權明細紀錄檔。",
+        urGrp);
+    urHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    urLay->addWidget(urHint);
+
+    connect(m_updateRecordFields.data, &QLineEdit::textChanged,
+        this, &PageCardOperation::onUpdateRecordLc);
+
+    auto* urBtn = new QPushButton("▶ 執行 Update Record", urGrp);
+    urBtn->setStyleSheet(
+        "QPushButton { background:#EF6C00; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    urLay->addWidget(urBtn);
+    addApduCmdPage(urGrp, "⑯ Update Record");
+    connect(urBtn, &QPushButton::clicked, this, &PageCardOperation::onUpdateRecord);
+    onUpdateRecordLc();   // 初始化 Lc 顯示
+
     apduCmdList->setCurrentRow(0);
     // Key Set / Data Set 的建立與自動載入，改到建構子裡（buildKeySetDataSetDialog() +
     // autoLoadKeySetAndDataSet()），因為相關控制項現在位於獨立管理視窗，而不是這個頁籤裡。
@@ -1298,6 +1358,73 @@ void PageCardOperation::onUpdateRecordCiphered()
         log("✔ Update Record Ciphered 成功 SW=9000");
     else
         log("⚠️ Update Record Ciphered SW=" + sw, true);
+}
+
+void PageCardOperation::onUpdateRecordLc()
+{
+    if (!m_updateRecordFields.lcDisplay) return;
+
+    QString dataV = m_updateRecordFields.data
+        ? m_updateRecordFields.data->text().trimmed().remove(' ').toUpper()
+        : QString();
+
+    m_updateRecordFields.lcDisplay->setText(
+        QString("%1").arg(dataV.length() / 2, 2, 16, QChar('0')).toUpper());
+}
+
+void PageCardOperation::onUpdateRecord()
+{
+    onUpdateRecordLc();   // 確保 Lc 為最新值
+
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    // ── 欄位檢查 ──
+    QString recNV = get(m_updateRecordFields.recN);
+    QString dataV = get(m_updateRecordFields.data);
+
+    if (recNV.isEmpty()) {
+        log("[Update Record] 請先輸入 P1（RecN）", true);
+        return;
+    }
+    bool okRec = false;
+    int recN = recNV.toInt(&okRec, 16);
+    if (!okRec || recN < 0x01 || recN > 0xFE) {
+        log("[Update Record] RecN 須介於 01h ~ FEh", true);
+        return;
+    }
+    if (dataV.isEmpty()) {
+        log("[Update Record] 請先輸入 DATA", true);
+        return;
+    }
+    if (dataV.length() % 2 != 0) {
+        log("[Update Record] DATA 長度須為偶數個 HEX 字元", true);
+        return;
+    }
+    if (dataV.length() / 2 > 0xFD) {
+        log("[Update Record] DATA 長度超過上限 FDh（253）bytes", true);
+        return;
+    }
+
+    QString apdu = m_updateRecordFields.buildApdu();
+    if (apdu.length() < 10) {
+        log("[Update Record] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Update Record ======");
+
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(getTargetHandle(), apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Update Record] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    if (sw == "9000")
+        log("✔ Update Record 成功 SW=9000");
+    else
+        log("⚠️ Update Record SW=" + sw, true);
 }
 
 void PageCardOperation::onReadBinary()
