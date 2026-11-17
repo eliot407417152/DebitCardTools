@@ -404,6 +404,20 @@ QString UpdateRecordFields::buildApdu() const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RawApduFields::buildApdu — CLA INS P1 P2 [Lc] [Data] [Le]
+//   完全依使用者輸入組合，不補 0、不自動算 Lc；留空的 Lc/Data/Le 不組入
+// ─────────────────────────────────────────────────────────────────────────────
+QString RawApduFields::buildApdu() const
+{
+    auto get = [](QLineEdit* f) {
+        return f ? f->text().trimmed().remove(' ').toUpper() : QString();
+        };
+
+    return get(cla) + get(ins) + get(p1) + get(p2)
+        + get(lc) + get(data) + get(le);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CardAuthFields — buildApdu
 //   P2 為自行輸入的 Kq（不做左移運算），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
 // ─────────────────────────────────────────────────────────────────────────────

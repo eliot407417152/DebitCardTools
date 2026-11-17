@@ -236,6 +236,23 @@ struct UpdateRecordFields
     QString buildApdu() const;
 };
 
+// 卡片指令 — Raw APDU（自訂指令測試）
+//   CLA/INS/P1/P2/Lc/Data/Le 全部由使用者自行輸入，程式不自動計算、不補值、不改值，
+//   Lc/Data/Le 留空則該欄位不組入 APDU。
+struct RawApduFields
+{
+    QLineEdit* cla = nullptr;
+    QLineEdit* ins = nullptr;
+    QLineEdit* p1 = nullptr;
+    QLineEdit* p2 = nullptr;
+    QLineEdit* lc = nullptr;
+    QLineEdit* data = nullptr;
+    QLineEdit* le = nullptr;
+    QLabel* preview = nullptr;   // 即時顯示組出來的完整 APDU
+
+    QString buildApdu() const;
+};
+
 // 卡片指令 — Card Authentication
 //   P2 由 Kq 邏輯左移 3 位運算（比照 Set Session Key 作法），DATA = R1 + R3（各 8 bytes），Lc/Le 固定 10h
 //   回應（DataOut，16 bytes）= [MAC 8 bytes][R2 8 bytes]
@@ -403,6 +420,8 @@ private slots:
     void onUpdateRecordCiphered();
     void onUpdateRecordLc();
     void onUpdateRecord();
+    void onRawApduPreview();
+    void onRawApdu();
     void onReadBinary();
     void onGenerateRandomCard();
     void onCardAuthentication();
@@ -545,6 +564,7 @@ private:
     TerminalAuthFields m_terminalAuthFields;   // Terminal Authentication（P1固定/Kq左移3位/Lc自動/Data=16bytes）
     SetSessionKeyCardFields m_setSessionKeyCardFields;
     UpdateRecordCipheredFields m_updateRecordCipheredFields;
+    RawApduFields m_rawApduFields;             // Raw APDU（全欄位自行輸入）
     UpdateRecordFields m_updateRecordFields;   // Update Record（00 D2 RecN 04 Lc Data）
     IsamSimpleFields m_readBinaryFields;   // Read Binary：CLA/INS/P1 固定，P2/Le 自行輸入
     IsamSimpleFields m_generateRandomCardFields;   // Generate Random Number：CLA/INS/P1/P2/Le 固定
