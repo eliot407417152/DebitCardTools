@@ -7,8 +7,6 @@
 #include <winscard.h>
 #include "CardUtils.h"
 #include "IsamKeyChecker.h"   // CustomerData / KeyCheckResult
-#include "CardWasher.h"       // 洗卡
-#include "CardIssuer.h"       // 發卡
 #include "KeySetLoader.h"     // Card Authentication 用：外部 Key Set 檔案
 #include "DataSetLoader.h"    // 外部 Data Set 檔案
 
@@ -21,6 +19,8 @@ class QVBoxLayout;
 class QGroupBox;
 class QDialog;
 class QRadioButton;
+class ReaderManager;
+class ReaderBar;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 各功能區塊的欄位集合（維持原本邏輯不變）
@@ -338,27 +338,23 @@ struct CryptoToolFields
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PageCardOperation
+// PageCardOperation — 操作工作區（程式啟動後直接顯示，不再有「偵測讀卡機」頁面）
 //
-//【已依需求調整】
-//   1. 不再由建構子傳入固定的 ISAM / 母卡 SCARDHANDLE，改傳入
-//      SCARDCONTEXT + 偵測到的讀卡機名稱清單 (QStringList)。
-//   2. 「ISAM 金鑰」「ISAM 指令」兩個頁籤、以及「製卡發卡流程」頁籤，
-//      現在都各自提供「讀卡機選擇」下拉選單（比照原本「卡片指令」頁籤的
-//      「發送對象」下拉選單做法），使用者可自行選擇要用哪一台讀卡機。
-//      實際連線 (SCardConnect) 改為「使用到某台讀卡機時才連線」，並快取
-//      連線代碼，避免重複連線。
-//   3. 「製作母卡」需要選擇兩台不同的讀卡機；若偵測到的讀卡機不足兩台，
-//      「製卡發卡流程」頁籤會直接停用，避免誤觸。
+//   • 讀卡機的偵測 / 連線 / 斷線 / 重新整理 統一交給 ReaderManager，
+//     每個需要選讀卡機的地方都放一個 ReaderBar（下拉選單 + 連線 / 斷線 / 重新整理）。
+//     重插卡片後按「重新整理」即可重新讀取，不必重開程式。
+//   • 頁籤：
+//       🔑 ISAM 金鑰 / 🔧 ISAM 指令 / 📡 卡片指令 / 🔐 加密工具   （本檔 + PageCardOperation_*.cpp）
+//       🔮 製作母卡 / 🔄 母卡轉換 / 🧼 洗卡 / 💳 發卡               （各自獨立的頁面類別，
+//         見 PageMakeMaster / PageConvertMaster / PageWashCard / PageIssueCard，
+//         之後調整任一流程只需要改對應的那一個頁面）
 // ─────────────────────────────────────────────────────────────────────────────
 class PageCardOperation : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit PageCardOperation(SCARDCONTEXT context,
-        const QStringList& readers,
-        QWidget* parent = nullptr);
+    explicit PageCardOperation(QWidget* parent = nullptr);
     ~PageCardOperation();
 
     // 設定選單「日誌顯示設定」使用：套用日誌字體大小(px)與行距(百分比，100=預設單行高)
@@ -391,17 +387,6 @@ private slots:
     void onUpdateDiversifyKeyLc();
     void onIsamGetDiversifyKey();
     void onIsamGetWorkingKey();
-
-    // 製卡發卡流程 Tab
-    void onLoadFile();
-    void onClearFields();
-    void onMakeMaster();
-    void onConvertMaster();
-    void onCustomerFieldChanged();
-    void onCodeABChanged();      // Code A / B 任一段改變 → 重算檢查碼，並更新 Exchange Code
-    void onExchangeChanged();    // Exchange Code 任一段改變 → 重算 CCode
-    void onWashCard();
-    void onIssueCard();
 
     // 卡片指令 Tab
     void onCreateFile();
@@ -448,7 +433,6 @@ private:
     void setupUI();
     void setupIsamTab(QWidget* tab);
     void setupIsamCmdTab(QWidget* tab);
-    void setupLodTab(QWidget* tab);
     void setupApduTab(QWidget* tab);
     void setupCryptoTab(QWidget* tab);
     QGroupBox* setupCreateFileGroup(QWidget* parent, QVBoxLayout* layout);
@@ -466,19 +450,12 @@ private:
     QLineEdit* makeHexField(QWidget* parent, int maxLen, const QString& placeholder = QString());
     QLineEdit* makeEditField(QWidget* parent, bool readOnly);
 
-    // 讀卡機連線輔助：依讀卡機名稱取得（必要時建立並快取）SCARDHANDLE
+    // 讀卡機連線輔助：委派給 ReaderManager（已連線且有效就直接用，失效或未連線則自動（重新）連線）
     SCARDHANDLE connectReader(const QString& readerName) const;
     // 供「卡片指令」頁籤使用：讀取該頁籤的「發送對象」下拉選單目前選擇的讀卡機
     SCARDHANDLE getTargetHandle() const;
 
     bool sendApduFromFields(SCARDHANDLE hCard, const ApduFields& fields, const QString& label);
-
-    void displayData(const CustomerData& d);
-    CustomerData collectDataFromFields() const;
-
-    // 三段式欄位（K1/K2/K3，各 16 碼）：合併成 48 碼 / 把 48 碼拆成三段
-    static QString joinSegs(QLineEdit* const* segs);
-    static void    setSegs(QLineEdit* const* segs, const QString& value);
 
     void log(const QString& msg, bool isError = false);
 
@@ -498,16 +475,11 @@ private:
     int m_logFontSize = 11;            // px
     int m_logLineSpacingPercent = 100; // 100 = 預設單行行高
 
-    // ── 讀卡機環境 ──────────────────────────────────────────────────────────
-    SCARDCONTEXT m_context = 0;
-    QStringList  m_readers;
-    bool         m_canMakeMaster = false;   // 讀卡機數量 >= 2 才允許製作母卡
-
-    // key: 讀卡機名稱, value: 已連線的 SCARDHANDLE（惰性連線快取）
-    mutable QMap<QString, SCARDHANDLE> m_handleCache;
+    // ── 讀卡機環境（ISAM 金鑰 / ISAM 指令 / 卡片指令 / 四個流程頁面共用同一個）────
+    ReaderManager* m_readerMgr = nullptr;
 
     // ── ISAM 金鑰 Tab ───────────────────────────────────────────────────────
-    QComboBox* m_isamKeyReaderCombo = nullptr;   // 本頁使用哪一台讀卡機
+    QComboBox* m_isamKeyReaderCombo = nullptr;   // 本頁使用哪一台讀卡機（來自 ReaderBar）
     QComboBox* m_isamKeyCombo = nullptr;
     QLabel* m_isamC3CodeLbl = nullptr;
     QLabel* m_isamC1CodeLbl = nullptr;
@@ -529,37 +501,6 @@ private:
     SetSessionKeyIsamFields m_setSessionKeyIsamFields;
     DiversifyKeyFields m_diversifyKeyFields;
     IsamSimpleFields m_workingKeyFields;
-
-    // ── 製卡發卡流程 Tab ────────────────────────────────────────────────────
-    QComboBox* m_masterIsamReaderCombo = nullptr;   // 製作母卡：ISAM 讀卡機
-    QComboBox* m_masterCardReaderCombo = nullptr;   // 製作母卡：母卡 讀卡機
-    QPushButton* m_loadBtn = nullptr;
-    QPushButton* m_clearBtn = nullptr;
-    QPushButton* m_makeMasterBtn = nullptr;
-    QPushButton* m_convertBtn = nullptr;   // 母卡轉換
-    QPushButton* m_washCardBtn = nullptr;  // 洗卡
-    QPushButton* m_issueCardBtn = nullptr; // 發卡
-    QLineEdit* m_issueC2DataEdit = nullptr; // 發卡：00C2 Write Record 自行輸入 PIN 碼（HEX，DataIn 會自動組成 01+長度+PIN）
-    QLabel* m_fileLabel = nullptr;
-
-    QLineEdit* m_nameEdit = nullptr;
-    QLineEdit* m_c3Edit = nullptr;
-    QLineEdit* m_c3CodeEdit = nullptr;
-    QLineEdit* m_c1Edit = nullptr;
-    QLineEdit* m_c1CodeEdit = nullptr;
-    // Code A / Code B / Exchange Code：各分成三段（K1、K2、K3，每段 16 碼）
-    QLineEdit* m_codeAEdit[3] = { nullptr, nullptr, nullptr };
-    QLineEdit* m_codeACheckEdit = nullptr;  // Code A 檢查碼（自動計算，唯讀）
-    QLineEdit* m_codeBEdit[3] = { nullptr, nullptr, nullptr };
-    QLineEdit* m_codeBCheckEdit = nullptr;  // Code B 檢查碼（自動計算，唯讀）
-    QLineEdit* m_exchEdit[3] = { nullptr, nullptr, nullptr };
-    QLineEdit* m_ccodeEdit = nullptr;       // 母卡轉換用 CCode（= Exchange Code 的檢查碼，自動計算）
-    bool m_updatingKeyFields = false;       // 程式自動填值時，避免 textChanged 連鎖觸發
-    QLineEdit* m_pinAEdit = nullptr;
-    QLineEdit* m_pinBEdit = nullptr;
-
-    CustomerData m_data;
-    bool m_loaded = false;
 
     // ── 卡片指令 Tab ────────────────────────────────────────────────────────
     CreateFileFields m_createFields;

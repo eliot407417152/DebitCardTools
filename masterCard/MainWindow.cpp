@@ -1,7 +1,5 @@
 ﻿#include "MainWindow.h"
-#include "PageSelectReader.h"
 #include "PageCardOperation.h"
-#include <QTimer>
 #include <QIcon>
 #include <QMenuBar>
 #include <QMenu>
@@ -21,11 +19,9 @@
 #include <algorithm>
 
 namespace {
-    // 尚未有使用者自訂設定、也還沒套用螢幕限制前的預設理想大小
-    constexpr int kSelectPageDefaultW = 550;
-    constexpr int kSelectPageDefaultH = 480;
-    constexpr int kOperationPageDefaultW = 1050;
-    constexpr int kOperationPageDefaultH = 600;
+    // 尚未有使用者自訂設定、也還沒套用螢幕限制前的預設理想大小（頁籤變多，預設寬度略為加大）
+    constexpr int kOperationPageDefaultW = 1280;
+    constexpr int kOperationPageDefaultH = 720;
 
     // 日誌顯示設定的預設值與可調整範圍
     constexpr int kLogFontSizeDefault = 11;   // px
@@ -43,17 +39,13 @@ MainWindow::MainWindow(QWidget* parent)
 
     buildMenuBar();
 
-    m_stack = new QStackedWidget(this);
-    setCentralWidget(m_stack);
+    // 啟動後直接進入操作工作區（不再先停在「顯示可用讀卡機」的頁面）
+    m_opPage = new PageCardOperation(this);
+    setCentralWidget(m_opPage);
 
-    m_selectReaderPage = new PageSelectReader(this);
-    m_stack->addWidget(m_selectReaderPage);
-
-    connect(m_selectReaderPage, &PageSelectReader::readerSelected,
-        this, &MainWindow::onReaderSelected);
-
-    setWindowTitle("智慧卡產製系統 - 請選擇讀卡機");
-    applyWindowSizeForCurrentPage();
+    setWindowTitle("智慧卡產製系統");
+    applyWindowSize();
+    applyLogSettingsToOperationPage();
 }
 
 void MainWindow::buildMenuBar()
@@ -70,63 +62,21 @@ void MainWindow::buildMenuBar()
     connect(keyDataSetAct, &QAction::triggered, this, &MainWindow::onOpenKeySetDataSetManager);
 
     QMenu* programMenu = menuBar()->addMenu(QStringLiteral("程式(&P)"));
-    QAction* backAct = programMenu->addAction(QStringLiteral("返回偵測頁面(&B)"));
-    connect(backAct, &QAction::triggered, this, &MainWindow::onBackToSelectReader);
-
-    programMenu->addSeparator();
     QAction* quitAct = programMenu->addAction(QStringLiteral("結束程式(&X)"));
     connect(quitAct, &QAction::triggered, this, &QWidget::close);
 }
 
-void MainWindow::onReaderSelected()
-{
-    m_opPage = new PageCardOperation(
-        m_selectReaderPage->context(),
-        m_selectReaderPage->readers(),
-        this);
-
-    m_stack->addWidget(m_opPage);
-    m_stack->setCurrentWidget(m_opPage);
-
-    setWindowTitle("智慧卡產製系統 - 操作工作區");
-    applyWindowSizeForCurrentPage();
-    applyLogSettingsToOperationPage();
-}
-
-// 返回「選擇讀卡機」頁面：現在只透過選單「程式→返回偵測頁面」觸發
-// (頁面內原本的「⬅️ 返回」按鈕已移除)
-void MainWindow::onBackToSelectReader()
-{
-    if (!m_opPage)
-        return; // 已經在偵測頁面，不用做任何事
-
-    m_stack->setCurrentIndex(0);
-    m_stack->removeWidget(m_opPage);
-    m_opPage->deleteLater();
-    m_opPage = nullptr;
-
-    setWindowTitle("智慧卡產製系統 - 請選擇讀卡機");
-
-    QTimer::singleShot(0, this, [this]() {
-        applyWindowSizeForCurrentPage();
-        });
-}
-
-// 依目前顯示的頁面，套用「使用者先前存過的大小」或「預設大小」，並夾在目前螢幕可用範圍內置中顯示，
+// 套用「使用者先前存過的大小」或「預設大小」，並夾在目前螢幕可用範圍內置中顯示，
 // 避免不同電腦解析度不同時視窗一開就超出畫面、還要手動拉動調整
-void MainWindow::applyWindowSizeForCurrentPage()
+void MainWindow::applyWindowSize()
 {
-    const bool onOperationPage = (m_opPage != nullptr);
-    const QString key = onOperationPage ? QStringLiteral("Window/OperationPage")
-        : QStringLiteral("Window/SelectPage");
-
     QSettings settings(QCoreApplication::applicationDirPath() + "/config.ini", QSettings::IniFormat);
-    int w = settings.value(key + "Width", 0).toInt();
-    int h = settings.value(key + "Height", 0).toInt();
+    int w = settings.value("Window/OperationPageWidth", 0).toInt();
+    int h = settings.value("Window/OperationPageHeight", 0).toInt();
 
     if (w <= 0 || h <= 0) {
-        w = onOperationPage ? kOperationPageDefaultW : kSelectPageDefaultW;
-        h = onOperationPage ? kOperationPageDefaultH : kSelectPageDefaultH;
+        w = kOperationPageDefaultW;
+        h = kOperationPageDefaultH;
     }
 
     applyClampedResize(w, h);
@@ -147,17 +97,13 @@ void MainWindow::applyClampedResize(int w, int h)
 }
 
 // 視窗大小設定：套用到「目前顯示的頁面」，設定完成後存入 config.ini，
-// 下次切到同一種頁面(選擇讀卡機 / 操作工作區)會直接套用，不用每次換電腦都手動拉動調整
+// 下次開啟程式會直接套用，不用每次換電腦都手動拉動調整
 void MainWindow::onEditWindowSize()
 {
-    const bool onOperationPage = (m_opPage != nullptr);
-
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("視窗大小設定"));
 
-    auto* hintLbl = new QLabel(onOperationPage
-        ? QStringLiteral("目前套用對象：操作工作區頁面")
-        : QStringLiteral("目前套用對象：選擇讀卡機頁面"), &dlg);
+    auto* hintLbl = new QLabel(QStringLiteral("套用對象：主視窗"), &dlg);
     hintLbl->setStyleSheet(QStringLiteral("color:#666;"));
 
     auto* widthSpin = new QSpinBox(&dlg);
@@ -201,15 +147,13 @@ void MainWindow::onEditWindowSize()
 
     applyClampedResize(w, h);
 
-    const QString key = onOperationPage ? QStringLiteral("Window/OperationPage")
-        : QStringLiteral("Window/SelectPage");
     QSettings settings(QCoreApplication::applicationDirPath() + "/config.ini", QSettings::IniFormat);
-    settings.setValue(key + "Width", w);
-    settings.setValue(key + "Height", h);
+    settings.setValue("Window/OperationPageWidth", w);
+    settings.setValue("Window/OperationPageHeight", h);
 
     QMessageBox::information(this, QStringLiteral("完成"),
-        QStringLiteral("視窗大小已儲存：%1 x %2\n下次切到%3會直接套用這個大小。")
-        .arg(w).arg(h).arg(onOperationPage ? QStringLiteral("操作工作區頁面") : QStringLiteral("選擇讀卡機頁面")));
+        QStringLiteral("視窗大小已儲存：%1 x %2\n下次開啟程式會直接套用這個大小。")
+        .arg(w).arg(h));
 }
 
 // 日誌顯示設定：調整「通訊日誌」區塊的字體大小與行距，設定完成後存入 config.ini，
@@ -223,7 +167,7 @@ void MainWindow::onEditLogAppearance()
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("日誌顯示設定"));
 
-    auto* hintLbl = new QLabel(QStringLiteral("套用對象：操作工作區頁面右側的「通訊日誌」"), &dlg);
+    auto* hintLbl = new QLabel(QStringLiteral("套用對象：右側的「通訊日誌」"), &dlg);
     hintLbl->setStyleSheet(QStringLiteral("color:#666;"));
 
     auto* fontSizeSpin = new QSpinBox(&dlg);
@@ -270,22 +214,15 @@ void MainWindow::onEditLogAppearance()
         m_opPage->applyLogAppearance(fontSize, lineSpacing);
 
     QMessageBox::information(this, QStringLiteral("完成"),
-        QStringLiteral("日誌顯示設定已儲存：字體 %1px、行距 %2%\n下次進入操作工作區頁面會直接套用。")
+        QStringLiteral("日誌顯示設定已儲存：字體 %1px、行距 %2%\n下次開啟程式會直接套用。")
         .arg(fontSize).arg(lineSpacing));
 }
 
-// Key Set / Data Set 管理視窗實際內容（載入按鈕、下拉選單…）屬於「操作工作區」頁面
-// (PageCardOperation) 的資料，因此只有已經選好讀卡機、進入操作工作區後才能開啟；
-// 若還在「選擇讀卡機」頁面就點選單，提示使用者先選讀卡機。
+// Key Set / Data Set 管理視窗實際內容（載入按鈕、下拉選單…）屬於操作工作區 (PageCardOperation) 的資料
 void MainWindow::onOpenKeySetDataSetManager()
 {
-    if (!m_opPage) {
-        QMessageBox::information(this, QStringLiteral("Key Set / Data Set 管理"),
-            QStringLiteral("請先選擇讀卡機、進入操作工作區後，才能開啟 Key Set / Data Set 管理視窗。"));
-        return;
-    }
-
-    m_opPage->openKeySetDataSetManager();
+    if (m_opPage)
+        m_opPage->openKeySetDataSetManager();
 }
 
 void MainWindow::applyLogSettingsToOperationPage()

@@ -3,7 +3,8 @@
 #include "IsamKeyChecker.h"
 #include "IsamKeyData.h"
 #include "MasterCardUpdater.h"
-#include "LodLoader.h"
+#include "ReaderManager.h"
+#include "ReaderBar.h"
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTextEdit>
@@ -43,9 +44,9 @@ void PageCardOperation::setupApduTab(QWidget* tab)
     // ── 讀卡機選擇（比照 ISAM 頁籤做法，自行選擇本頁指令要發送到哪一台讀卡機）──
     auto* targetGrp = new QGroupBox("讀卡機選擇");
     auto* targetForm = new QFormLayout(targetGrp);
-    auto* m_targetCombo = new QComboBox(content);
-    m_targetCombo->addItems(m_readers);
-    targetForm->addRow("發送對象：", m_targetCombo);
+    auto* targetBar = new ReaderBar(m_readerMgr, 0, content);
+    auto* m_targetCombo = targetBar->combo();
+    targetForm->addRow("發送對象：", targetBar);
     layout->addWidget(targetGrp);
 
     auto* apduNoteLbl = new QLabel("以下指令發送至上方選擇的讀卡機。左側點選指令名稱即可切換。", content);

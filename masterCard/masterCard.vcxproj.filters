@@ -40,9 +40,6 @@
     <ClCompile Include="PageCardOperation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="PageSelectReader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="MasterCardUpdater.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -67,9 +64,6 @@
     <ClCompile Include="CardIssuer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="PageCardOperation_LodTab.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="PageCardOperation_IsamTab.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -89,6 +83,30 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PageCardOperation_CryptoTab.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CustomerDataForm.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FlowPageBase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PageConvertMaster.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PageIssueCard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PageMakeMaster.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PageWashCard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ReaderBar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ReaderManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -129,15 +147,39 @@
     <ClInclude Include="KeySetLoader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="UiHelpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="MainWindow.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="PageSelectReader.h">
+    <QtMoc Include="PageCardOperation.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="PageCardOperation.h">
+    <QtMoc Include="CustomerDataForm.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="FlowPageBase.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="PageConvertMaster.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="PageIssueCard.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="PageMakeMaster.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="PageWashCard.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="ReaderBar.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="ReaderManager.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

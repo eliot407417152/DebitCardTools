@@ -122,8 +122,14 @@
     </ClCompile>
     <ClCompile Include="PageCardOperation_IsamCmdTab.cpp" />
     <ClCompile Include="PageCardOperation_IsamTab.cpp" />
-    <ClCompile Include="PageCardOperation_LodTab.cpp" />
-    <ClCompile Include="PageSelectReader.cpp" />
+    <ClCompile Include="CustomerDataForm.cpp" />
+    <ClCompile Include="FlowPageBase.cpp" />
+    <ClCompile Include="PageConvertMaster.cpp" />
+    <ClCompile Include="PageIssueCard.cpp" />
+    <ClCompile Include="PageMakeMaster.cpp" />
+    <ClCompile Include="PageWashCard.cpp" />
+    <ClCompile Include="ReaderBar.cpp" />
+    <ClCompile Include="ReaderManager.cpp" />
     <QtRcc Include="masterCard.qrc" />
     <QtUic Include="masterCard.ui" />
     <ClCompile Include="main.cpp" />
@@ -141,8 +147,16 @@
     <ClInclude Include="MasterCardUpdater.h" />
     <ClInclude Include="OperationMode.h" />
     <ClInclude Include="resource.h" />
-    <QtMoc Include="PageSelectReader.h" />
+    <ClInclude Include="UiHelpers.h" />
     <QtMoc Include="PageCardOperation.h" />
+    <QtMoc Include="CustomerDataForm.h" />
+    <QtMoc Include="FlowPageBase.h" />
+    <QtMoc Include="PageConvertMaster.h" />
+    <QtMoc Include="PageIssueCard.h" />
+    <QtMoc Include="PageMakeMaster.h" />
+    <QtMoc Include="PageWashCard.h" />
+    <QtMoc Include="ReaderBar.h" />
+    <QtMoc Include="ReaderManager.h" />
     <QtMoc Include="MainWindow.h" />
   </ItemGroup>
   <ItemGroup>

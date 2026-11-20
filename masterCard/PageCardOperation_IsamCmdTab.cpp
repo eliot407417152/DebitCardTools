@@ -3,7 +3,8 @@
 #include "IsamKeyChecker.h"
 #include "IsamKeyData.h"
 #include "MasterCardUpdater.h"
-#include "LodLoader.h"
+#include "ReaderManager.h"
+#include "ReaderBar.h"
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTextEdit>
@@ -41,9 +42,9 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
     // ── 讀卡機選擇（本頁指令要發送到哪一台讀卡機）──────────────────────────
     auto* readerGrp = new QGroupBox("讀卡機選擇", content);
     auto* readerForm = new QFormLayout(readerGrp);
-    m_isamCmdReaderCombo = new QComboBox(content);
-    m_isamCmdReaderCombo->addItems(m_readers);
-    readerForm->addRow("發送對象：", m_isamCmdReaderCombo);
+    auto* readerBar = new ReaderBar(m_readerMgr, 0, content);
+    m_isamCmdReaderCombo = readerBar->combo();
+    readerForm->addRow("發送對象：", readerBar);
     layout->addWidget(readerGrp);
 
     auto* noteLbl = new QLabel("以下指令發送至上方選擇的讀卡機。左側點選指令名稱即可切換。", content);
