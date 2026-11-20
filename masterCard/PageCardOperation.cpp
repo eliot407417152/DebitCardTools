@@ -133,10 +133,7 @@ void PageCardOperation::setupUI()
 
     m_logEdit = new QTextEdit(this);
     m_logEdit->setReadOnly(true);
-    m_logEdit->setStyleSheet(
-        QString("background:#121212; color:#00FF66; "
-            "font-family:'Courier New',monospace; font-size:%1px;")
-        .arg(m_logFontSize));
+    m_logEdit->setStyleSheet(logStyleSheet());
     logLay->addWidget(m_logEdit);
     bodyRow->addWidget(logGrp, 2);
 
@@ -289,13 +286,20 @@ bool PageCardOperation::sendApduFromFields(SCARDHANDLE hCard,
 // Slots — ISAM Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-void PageCardOperation::log(const QString& msg, bool isError)
+QString PageCardOperation::logStyleSheet() const
 {
-    QString color = isError ? "#FF3333" : "#00FF66";
-    m_logEdit->append(QString("<font color=\"%1\">[%2] %3</font>")
-        .arg(color, QDateTime::currentDateTime().toString("hh:mm:ss"), msg.toHtmlEscaped()));
+    return QString("background:%1; color:%2; border:1px solid #CCC; "
+        "font-family:'Courier New',monospace; font-size:%3px;")
+        .arg(m_logColors.background, m_logColors.text).arg(m_logFontSize);
+}
 
-    // 讓剛新增的這一行也套用目前設定的行距，不用等下次調整設定才生效
+// 把一筆日誌顯示到畫面上（套用目前的顏色與行距）
+void PageCardOperation::appendLogEntry(const LogEntry& e)
+{
+    const QString color = e.isError ? m_logColors.error : m_logColors.text;
+    m_logEdit->append(QString("<font color=\"%1\">%2</font>")
+        .arg(color, e.text.toHtmlEscaped()));
+
     QTextCursor cursor = m_logEdit->textCursor();
     cursor.movePosition(QTextCursor::End);
     QTextBlockFormat fmt = cursor.blockFormat();
@@ -303,30 +307,29 @@ void PageCardOperation::log(const QString& msg, bool isError)
     cursor.setBlockFormat(fmt);
 }
 
-// 設定選單「日誌顯示設定」使用：套用字體大小(px)與行距(百分比)，
-// 並立即套用到目前已存在的每一行日誌，讓使用者馬上看到效果
-void PageCardOperation::applyLogAppearance(int fontSizePx, int lineSpacingPercent)
+void PageCardOperation::log(const QString& msg, bool isError)
+{
+    LogEntry e{ QString("[%1] %2").arg(QDateTime::currentDateTime().toString("hh:mm:ss"), msg), isError };
+    m_logEntries.append(e);
+    appendLogEntry(e);
+}
+
+// 設定選單「日誌顯示設定」使用：套用字體大小(px)、行距(百分比)與顏色，
+// 並把目前已存在的每一行日誌依新設定重新顯示，讓使用者馬上看到效果
+void PageCardOperation::applyLogAppearance(int fontSizePx, int lineSpacingPercent, const LogColors& colors)
 {
     m_logFontSize = fontSizePx;
     m_logLineSpacingPercent = lineSpacingPercent;
+    m_logColors = colors;
 
     if (!m_logEdit)
         return;
 
-    m_logEdit->setStyleSheet(
-        QString("background:#121212; color:#00FF66; "
-            "font-family:'Courier New',monospace; font-size:%1px;")
-        .arg(m_logFontSize));
+    m_logEdit->setStyleSheet(logStyleSheet());
 
-    QTextCursor cursor(m_logEdit->document());
-    cursor.beginEditBlock();
-    cursor.movePosition(QTextCursor::Start);
-    QTextBlockFormat fmt;
-    fmt.setLineHeight(m_logLineSpacingPercent, QTextBlockFormat::ProportionalHeight);
-    do {
-        cursor.setBlockFormat(fmt);
-    } while (cursor.movePosition(QTextCursor::NextBlock));
-    cursor.endEditBlock();
+    m_logEdit->clear();
+    for (const LogEntry& e : m_logEntries)
+        appendLogEntry(e);
 }
 
 void PageCardOperation::onClearLog()
@@ -342,6 +345,7 @@ void PageCardOperation::onClearLog()
         return;
 
     m_logEdit->clear();
+    m_logEntries.clear();
 }
 
 void PageCardOperation::onExportLog()

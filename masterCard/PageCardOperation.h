@@ -338,6 +338,20 @@ struct CryptoToolFields
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 日誌顏色設定（背景 / 一般文字 / 錯誤文字，皆為 #RRGGBB）
+//   預設為亮色（白底、黑字、紅色錯誤）；kDarkPreset 為原本的黑底綠字
+// ─────────────────────────────────────────────────────────────────────────────
+struct LogColors
+{
+    QString background = "#FFFFFF";
+    QString text = "#000000";
+    QString error = "#C62828";
+
+    static LogColors lightPreset() { return LogColors{ "#FFFFFF", "#000000", "#C62828" }; }
+    static LogColors darkPreset() { return LogColors{ "#121212", "#00FF66", "#FF3333" }; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PageCardOperation — 操作工作區（程式啟動後直接顯示，不再有「偵測讀卡機」頁面）
 //
 //   • 讀卡機的偵測 / 連線 / 斷線 / 重新整理 統一交給 ReaderManager，
@@ -357,8 +371,8 @@ public:
     explicit PageCardOperation(QWidget* parent = nullptr);
     ~PageCardOperation();
 
-    // 設定選單「日誌顯示設定」使用：套用日誌字體大小(px)與行距(百分比，100=預設單行高)
-    void applyLogAppearance(int fontSizePx, int lineSpacingPercent);
+    // 設定選單「日誌顯示設定」使用：套用日誌字體大小(px)、行距(百分比，100=預設單行高)與顏色
+    void applyLogAppearance(int fontSizePx, int lineSpacingPercent, const LogColors& colors);
 
     // 設定選單「Key Set / Data Set 管理」使用：開啟（或喚起）Key Set / Data Set 管理視窗，
     // 不再放在「卡片指令」頁籤裡，改由選單集中管理，避免混在卡片指令操作中。
@@ -474,6 +488,13 @@ private:
     // ── 日誌外觀設定 ────────────────────────────────────────────────────────
     int m_logFontSize = 11;            // px
     int m_logLineSpacingPercent = 100; // 100 = 預設單行行高
+    LogColors m_logColors;             // 日誌顏色（預設亮色）
+
+    // 日誌內容保留一份，改顏色時可整份重新上色（已顯示的舊訊息也會一起變）
+    struct LogEntry { QString text; bool isError; };
+    QList<LogEntry> m_logEntries;
+    void appendLogEntry(const LogEntry& e);
+    QString logStyleSheet() const;
 
     // ── 讀卡機環境（ISAM 金鑰 / ISAM 指令 / 卡片指令 / 四個流程頁面共用同一個）────
     ReaderManager* m_readerMgr = nullptr;

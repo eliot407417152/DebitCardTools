@@ -16,6 +16,12 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QMessageBox>
+#include <QColorDialog>
+#include <QApplication>
+#include <QStyle>
+#include <QStyleFactory>
+#include <QPalette>
+#include <QHBoxLayout>
 #include <algorithm>
 
 namespace {
@@ -30,6 +36,54 @@ namespace {
     constexpr int kLogLineSpacingDefault = 100;  // % (100 = 預設單行行高)
     constexpr int kLogLineSpacingMin = 50;
     constexpr int kLogLineSpacingMax = 300;
+
+    // 讀 / 寫 config.ini 裡的日誌顏色（預設為亮色）
+    LogColors loadLogColors(QSettings& st)
+    {
+        const LogColors def = LogColors::lightPreset();
+        LogColors c;
+        c.background = st.value(QStringLiteral("Log/BgColor"), def.background).toString();
+        c.text = st.value(QStringLiteral("Log/TextColor"), def.text).toString();
+        c.error = st.value(QStringLiteral("Log/ErrorColor"), def.error).toString();
+        return c;
+    }
+    void saveLogColors(QSettings& st, const LogColors& c)
+    {
+        st.setValue(QStringLiteral("Log/BgColor"), c.background);
+        st.setValue(QStringLiteral("Log/TextColor"), c.text);
+        st.setValue(QStringLiteral("Log/ErrorColor"), c.error);
+    }
+
+    // 整個程式的亮色 / 系統預設外觀切換
+    //   亮色：Fusion 樣式 + 明亮調色盤（即使 Windows 開了深色模式，介面也維持亮色）
+    void applyAppTheme(bool forceLight)
+    {
+        static const QString originalStyle = QApplication::style()->objectName();
+        if (forceLight) {
+            QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+            QPalette p;
+            p.setColor(QPalette::Window, QColor("#FFFFFF"));
+            p.setColor(QPalette::WindowText, QColor("#000000"));
+            p.setColor(QPalette::Base, QColor("#FFFFFF"));
+            p.setColor(QPalette::AlternateBase, QColor("#FFFFFF"));
+            p.setColor(QPalette::Text, QColor("#000000"));
+            p.setColor(QPalette::Button, QColor("#F0F0F0"));
+            p.setColor(QPalette::ButtonText, QColor("#000000"));
+            p.setColor(QPalette::ToolTipBase, QColor("#FFFFDC"));
+            p.setColor(QPalette::ToolTipText, QColor("#202020"));
+            p.setColor(QPalette::PlaceholderText, QColor("#8A8A8A"));
+            p.setColor(QPalette::Highlight, QColor("#0078D4"));
+            p.setColor(QPalette::HighlightedText, QColor("#FFFFFF"));
+            p.setColor(QPalette::Disabled, QPalette::Text, QColor("#9A9A9A"));
+            p.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#9A9A9A"));
+            QApplication::setPalette(p);
+        }
+        else {
+            if (QStyle* st = QStyleFactory::create(originalStyle))
+                QApplication::setStyle(st);
+            QApplication::setPalette(QPalette());
+        }
+    }
 }
 
 MainWindow::MainWindow(QWidget* parent)
@@ -56,6 +110,19 @@ void MainWindow::buildMenuBar()
 
     QAction* logAppearanceAct = settingMenu->addAction(QStringLiteral("日誌顯示設定(&L)..."));
     connect(logAppearanceAct, &QAction::triggered, this, &MainWindow::onEditLogAppearance);
+
+    QAction* lightThemeAct = settingMenu->addAction(QStringLiteral("強制亮色介面(&T)"));
+    lightThemeAct->setCheckable(true);
+    {
+        QSettings st(QCoreApplication::applicationDirPath() + "/config.ini", QSettings::IniFormat);
+        lightThemeAct->setChecked(st.value(QStringLiteral("UI/ForceLight"), true).toBool());
+        applyAppTheme(lightThemeAct->isChecked());
+    }
+    connect(lightThemeAct, &QAction::toggled, this, [](bool on) {
+        QSettings st(QCoreApplication::applicationDirPath() + "/config.ini", QSettings::IniFormat);
+        st.setValue(QStringLiteral("UI/ForceLight"), on);
+        applyAppTheme(on);
+        });
 
     settingMenu->addSeparator();
     QAction* keyDataSetAct = settingMenu->addAction(QStringLiteral("Key Set / Data Set 管理(&K)..."));
@@ -181,14 +248,61 @@ void MainWindow::onEditLogAppearance()
     lineSpacingSpin->setSuffix(QStringLiteral(" %"));
     lineSpacingSpin->setValue(curLineSpacing);
 
+    // 顏色：點色塊開啟調色盤；也可直接套用「亮色 / 深色」預設
+    LogColors colors = loadLogColors(settings);
+    auto* bgBtn = new QPushButton(&dlg);
+    auto* textBtn = new QPushButton(&dlg);
+    auto* errBtn = new QPushButton(&dlg);
+    auto refreshSwatches = [&colors, bgBtn, textBtn, errBtn]() {
+        auto paint = [](QPushButton* b, const QString& hex) {
+            b->setText(hex.toUpper());
+            // 文字用對比色，避免跟色塊同色看不到
+            const QColor c(hex);
+            const QString fg = c.lightness() > 128 ? "#000000" : "#FFFFFF";
+            b->setStyleSheet(QString("QPushButton { background:%1; color:%2; padding:6px 14px; "
+                "border:1px solid #888; border-radius:3px; font-family:'Courier New'; }").arg(hex, fg));
+            };
+        paint(bgBtn, colors.background);
+        paint(textBtn, colors.text);
+        paint(errBtn, colors.error);
+        };
+    refreshSwatches();
+
+    auto pick = [&dlg, &colors, refreshSwatches](QString& target, const QString& title) {
+        const QColor c = QColorDialog::getColor(QColor(target), &dlg, title);
+        if (c.isValid()) {
+            target = c.name(QColor::HexRgb);
+            refreshSwatches();
+        }
+        };
+    connect(bgBtn, &QPushButton::clicked, &dlg, [&, pick]() { pick(colors.background, QStringLiteral("選擇日誌背景色")); });
+    connect(textBtn, &QPushButton::clicked, &dlg, [&, pick]() { pick(colors.text, QStringLiteral("選擇日誌文字顏色")); });
+    connect(errBtn, &QPushButton::clicked, &dlg, [&, pick]() { pick(colors.error, QStringLiteral("選擇日誌錯誤文字顏色")); });
+
+    auto* lightPresetBtn = new QPushButton(QStringLiteral("☀ 亮色（預設）"), &dlg);
+    auto* darkPresetBtn = new QPushButton(QStringLiteral("🌙 深色（黑底綠字）"), &dlg);
+    connect(lightPresetBtn, &QPushButton::clicked, &dlg, [&colors, refreshSwatches]() {
+        colors = LogColors::lightPreset(); refreshSwatches(); });
+    connect(darkPresetBtn, &QPushButton::clicked, &dlg, [&colors, refreshSwatches]() {
+        colors = LogColors::darkPreset(); refreshSwatches(); });
+    auto* presetRow = new QHBoxLayout();
+    presetRow->addWidget(lightPresetBtn);
+    presetRow->addWidget(darkPresetBtn);
+
     auto* formLayout = new QFormLayout();
     formLayout->addRow(QStringLiteral("日誌字體大小："), fontSizeSpin);
     formLayout->addRow(QStringLiteral("每行間距："), lineSpacingSpin);
+    formLayout->addRow(QStringLiteral("背景顏色："), bgBtn);
+    formLayout->addRow(QStringLiteral("一般文字顏色："), textBtn);
+    formLayout->addRow(QStringLiteral("錯誤文字顏色："), errBtn);
+    formLayout->addRow(QStringLiteral("快速套用："), presetRow);
 
     auto* resetBtn = new QPushButton(QStringLiteral("還原預設值"), &dlg);
-    connect(resetBtn, &QPushButton::clicked, &dlg, [fontSizeSpin, lineSpacingSpin]() {
+    connect(resetBtn, &QPushButton::clicked, &dlg, [=, &colors]() {
         fontSizeSpin->setValue(kLogFontSizeDefault);
         lineSpacingSpin->setValue(kLogLineSpacingDefault);
+        colors = LogColors::lightPreset();
+        refreshSwatches();
         });
 
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
@@ -209,12 +323,13 @@ void MainWindow::onEditLogAppearance()
 
     settings.setValue(QStringLiteral("Log/FontSize"), fontSize);
     settings.setValue(QStringLiteral("Log/LineSpacingPercent"), lineSpacing);
+    saveLogColors(settings, colors);
 
     if (m_opPage)
-        m_opPage->applyLogAppearance(fontSize, lineSpacing);
+        m_opPage->applyLogAppearance(fontSize, lineSpacing, colors);
 
     QMessageBox::information(this, QStringLiteral("完成"),
-        QStringLiteral("日誌顯示設定已儲存：字體 %1px、行距 %2%\n下次開啟程式會直接套用。")
+        QStringLiteral("日誌顯示設定已儲存：字體 %1px、行距 %2%、顏色已更新\n下次開啟程式會直接套用。")
         .arg(fontSize).arg(lineSpacing));
 }
 
@@ -234,5 +349,5 @@ void MainWindow::applyLogSettingsToOperationPage()
     const int fontSize = settings.value(QStringLiteral("Log/FontSize"), kLogFontSizeDefault).toInt();
     const int lineSpacing = settings.value(QStringLiteral("Log/LineSpacingPercent"), kLogLineSpacingDefault).toInt();
 
-    m_opPage->applyLogAppearance(fontSize, lineSpacing);
+    m_opPage->applyLogAppearance(fontSize, lineSpacing, loadLogColors(settings));
 }
