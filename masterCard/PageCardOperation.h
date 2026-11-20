@@ -395,10 +395,11 @@ private slots:
     // 製卡發卡流程 Tab
     void onLoadFile();
     void onClearFields();
-    void onAuthenticate();
     void onMakeMaster();
     void onConvertMaster();
     void onCustomerFieldChanged();
+    void onCodeABChanged();      // Code A / B 任一段改變 → 重算檢查碼，並更新 Exchange Code
+    void onExchangeChanged();    // Exchange Code 任一段改變 → 重算 CCode
     void onWashCard();
     void onIssueCard();
 
@@ -475,6 +476,10 @@ private:
     void displayData(const CustomerData& d);
     CustomerData collectDataFromFields() const;
 
+    // 三段式欄位（K1/K2/K3，各 16 碼）：合併成 48 碼 / 把 48 碼拆成三段
+    static QString joinSegs(QLineEdit* const* segs);
+    static void    setSegs(QLineEdit* const* segs, const QString& value);
+
     void log(const QString& msg, bool isError = false);
 
     // 加密工具：DES/3DES 共用計算邏輯（isDes=false 代表 3DES）
@@ -531,7 +536,6 @@ private:
     QPushButton* m_loadBtn = nullptr;
     QPushButton* m_clearBtn = nullptr;
     QPushButton* m_makeMasterBtn = nullptr;
-    QPushButton* m_authBtn = nullptr;
     QPushButton* m_convertBtn = nullptr;   // 母卡轉換
     QPushButton* m_washCardBtn = nullptr;  // 洗卡
     QPushButton* m_issueCardBtn = nullptr; // 發卡
@@ -543,16 +547,19 @@ private:
     QLineEdit* m_c3CodeEdit = nullptr;
     QLineEdit* m_c1Edit = nullptr;
     QLineEdit* m_c1CodeEdit = nullptr;
-    QLineEdit* m_codeAEdit = nullptr;
-    QLineEdit* m_codeBEdit = nullptr;
-    QLineEdit* m_exchEdit = nullptr;
-    QLineEdit* m_ccodeEdit = nullptr;       // 母卡轉換用 CCode（手動填入）
+    // Code A / Code B / Exchange Code：各分成三段（K1、K2、K3，每段 16 碼）
+    QLineEdit* m_codeAEdit[3] = { nullptr, nullptr, nullptr };
+    QLineEdit* m_codeACheckEdit = nullptr;  // Code A 檢查碼（自動計算，唯讀）
+    QLineEdit* m_codeBEdit[3] = { nullptr, nullptr, nullptr };
+    QLineEdit* m_codeBCheckEdit = nullptr;  // Code B 檢查碼（自動計算，唯讀）
+    QLineEdit* m_exchEdit[3] = { nullptr, nullptr, nullptr };
+    QLineEdit* m_ccodeEdit = nullptr;       // 母卡轉換用 CCode（= Exchange Code 的檢查碼，自動計算）
+    bool m_updatingKeyFields = false;       // 程式自動填值時，避免 textChanged 連鎖觸發
     QLineEdit* m_pinAEdit = nullptr;
     QLineEdit* m_pinBEdit = nullptr;
 
     CustomerData m_data;
     bool m_loaded = false;
-    bool m_authenticated = false;
 
     // ── 卡片指令 Tab ────────────────────────────────────────────────────────
     CreateFileFields m_createFields;

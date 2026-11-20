@@ -1,8 +1,90 @@
 ﻿#include "MasterCardUpdater.h"
+#include <QRegularExpression>
 
 MasterCardUpdater::MasterCardUpdater(SCARDHANDLE masterHandle, SCARDHANDLE isamHandle)
     : m_masterHandle(masterHandle), m_isamHandle(isamHandle)
 {
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 製作母卡（完整流程）
+//   1. ISAM 寫入 Exchange Key（Select ISAM Object → Get Key Check Code → Write Key）
+//   2. 母卡雙向認證
+//   3. 寫入 C8 / C9 / 0001 / 0002
+// ─────────────────────────────────────────────────────────────────────────────
+bool MasterCardUpdater::makeMasterCard(const CustomerData& data, const LogFn& log)
+{
+    if (m_masterHandle == 0 || m_isamHandle == 0) {
+        logErr(log, "Error: 卡片控制代碼無效（Master 或 ISAM 為 0）");
+        return false;
+    }
+
+    logInfo(log, "====== 🔮 [Master] 啟動製作母卡流程 ======");
+
+    if (!writeExchangeKey(data, log)) return false;
+    if (!authenticate(log)) return false;
+    if (!writeData(data, data.pinA, data.pinB, log)) return false;
+
+    logInfo(log, "🎉 ====== ✔ 母卡製作完成 ======");
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ISAM 寫入 Exchange Key
+//   1. Select ISAM Object          82 A4 00 00 02 95 02 0E
+//   2. Get Key Check Code          82 07 00 00 07 → 取前 4 碼對照 CD Key（例：656B）
+//   3. Write Key                   82 03 10 02 1E [EKey + CCode + Limit]
+//        EKey  = CD Key 3DES 加密 Exchange Code（24 bytes）
+//        CCode = Exchange Code 的檢查碼（2 bytes）
+//        Limit = FFFFFFFF（4 bytes）
+// ─────────────────────────────────────────────────────────────────────────────
+bool MasterCardUpdater::writeExchangeKey(const CustomerData& data, const LogFn& log)
+{
+    logInfo(log, "── [ISAM] 寫入 Exchange Key ──");
+
+    // 先檢查資料，避免組出長度不對的 Write Key
+    const QRegularExpression hexRe("^[0-9A-F]+$");
+    const QString exchangeKey = data.exchangeCode.trimmed().toUpper();
+    const QString ccode = data.ccode.trimmed().toUpper();
+    if (exchangeKey.length() != 48 || !hexRe.match(exchangeKey).hasMatch()) {
+        logErr(log, "Error: Exchange Code 必須是 48 個 HEX 字元（K1+K2+K3，各 16 碼）");
+        return false;
+    }
+    if (ccode.length() != 4 || !hexRe.match(ccode).hasMatch()) {
+        logErr(log, "Error: CCode（Exchange Code 檢查碼）必須是 4 個 HEX 字元");
+        return false;
+    }
+
+    // 1. Select ISAM Object
+    if (!sendCheck(m_isamHandle, "82A400000295020E", "Select ISAM Object", log)) return false;
+
+    // 2. Get Key Check Code → 取得此 ISAM 的 CD Key
+    QString kccResp;
+    if (!sendCheck(m_isamHandle, "8207000007", "Get Key Check Code", log, kccResp)) return false;
+
+    const QString cdKey = CardUtils::lookupIsamCdKey(kccResp);
+    if (cdKey.isEmpty()) {
+        logErr(log, QString("Error: 無法對照 CD Key 類型 (回應前4碼: %1)").arg(kccResp.left(4)));
+        return false;
+    }
+    logInfo(log, QString("✔ CD Key 對照成功（檢索碼 %1）").arg(kccResp.left(4).toUpper()));
+
+    // 3. EKey = CD Key 3DES 加密 Exchange Code
+    const QString eKey = CardUtils::encrypt3DES(cdKey, exchangeKey);
+    if (eKey.length() != 48) {
+        logErr(log, "Error: Exchange Key 加密失敗（請確認 CD Key / Exchange Code 格式）");
+        return false;
+    }
+    logInfo(log, "✔ EKey 計算完成：" + eKey);
+
+    // 4. Write Key：CLA:82 INS:03 P1:10 P2:02 Lc:自動計算（EKey+CCode+Limit = 30 bytes = 1E）
+    const QString wkData = eKey + ccode + "FFFFFFFF";
+    const QString wkLc = QString("%1").arg(wkData.length() / 2, 2, 16, QChar('0')).toUpper();
+    const QString wkApdu = "8203" "10" "02" + wkLc + wkData;
+    if (!sendCheck(m_isamHandle, wkApdu, "Write Key (Exchange Key)", log)) return false;
+
+    logInfo(log, "✔ Exchange Key 寫入 ISAM 成功。");
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

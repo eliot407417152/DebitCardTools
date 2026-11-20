@@ -88,6 +88,37 @@ QByteArray CardUtils::hexToBytes(const QString& hex)
     return QByteArray::fromHex(hex.trimmed().remove(' ').toUtf8());
 }
 
+// 是否為非空、純 HEX 字元的字串
+static bool isHexString(const QString& s)
+{
+    if (s.isEmpty()) return false;
+    for (QChar c : s) {
+        const bool ok = (c >= '0' && c <= '9') ||
+            (c >= 'A' && c <= 'F') ||
+            (c >= 'a' && c <= 'f');
+        if (!ok) return false;
+    }
+    return true;
+}
+
+QString CardUtils::xorHex(const QString& hexA, const QString& hexB)
+{
+    const QString a = hexA.trimmed().remove(' ');
+    const QString b = hexB.trimmed().remove(' ');
+    if (a.length() != b.length() || a.length() % 2 != 0) return {};
+    if (!isHexString(a) || !isHexString(b)) return {};
+    return bytesToHex(xorBytes(hexToBytes(a), hexToBytes(b)));
+}
+
+QString CardUtils::calcKeyCheckCode(const QString& hexKey)
+{
+    const QString key = hexKey.trimmed().remove(' ').toUpper();
+    if (key.length() != 48 || !isHexString(key)) return {};
+    // 3DES-ECB 對單一 8 bytes 區塊，IV 不影響結果（ECB 不使用 IV）
+    const QString out = encrypt3DES(key, QStringLiteral("0000000000000000"));
+    return out.left(4);
+}
+
 QString CardUtils::bytesToHex(const QByteArray& bytes)
 {
     return QString(bytes.toHex()).toUpper();

@@ -4,9 +4,15 @@
 #include <winscard.h>
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MasterCardUpdater — 母卡雙向認證 & 資料寫入
+// MasterCardUpdater — 製作母卡（Exchange Key 寫入 + 雙向認證 + 資料寫入）
 //
-// 正確使用順序：
+// 製作母卡請直接呼叫 makeMasterCard()，一次完成：
+//   0. writeExchangeKey() — ISAM 寫入 Exchange Key（KID=10）
+//        Select ISAM Object → Get Key Check Code（對照 CD Key）
+//        → Write Key  CLA:82 INS:03 P1:10 P2:02 Lc:1E
+//          Data = EKey + CCode + Limit(FFFFFFFF)
+//          EKey  = CD Key 3DES 加密 LOD 的 Exchange Code
+//          CCode = Exchange Code 的檢查碼（3DES-ECB，Data=0000000000000000，取前 4 碼）
 //   1. authenticate()   — 雙向認證，成功後才能寫入
 //   2. writeData()      — 依序寫入 C8, C9, 0001, 0002
 //
@@ -29,7 +35,11 @@ class MasterCardUpdater
 public:
     MasterCardUpdater(SCARDHANDLE masterHandle, SCARDHANDLE isamHandle);
 
-    // 雙向認證（須先呼叫）
+    // 製作母卡（完整流程）：寫入 Exchange Key → 雙向認證 → 寫入 C8/C9/0001/0002
+    //   使用 data.exchangeCode / data.ccode / data.pinA / data.pinB
+    bool makeMasterCard(const CustomerData& data, const LogFn& log);
+
+    // 雙向認證（makeMasterCard 內部使用；單獨呼叫時須先於 writeData）
     bool authenticate(const LogFn& log);
 
     // 寫入全部 EF（C8, C9, 0001, 0002）
@@ -57,6 +67,10 @@ public:
 private:
     SCARDHANDLE m_masterHandle;
     SCARDHANDLE m_isamHandle;
+
+    // ── ISAM 寫入 Exchange Key（製作母卡的第一步）──────────────────────────
+    //   Select ISAM Object → Get Key Check Code（取得 CD Key）→ Write Key（P1=10 P2=02）
+    bool writeExchangeKey(const CustomerData& data, const LogFn& log);
 
     // ── AEF（C8 / C9）──────────────────────────────────────────────────────
     bool writeAEF(const QString& label,

@@ -24,6 +24,8 @@
 #include <QListWidget>
 #include <QStackedWidget>
 #include <QSplitter>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab 4 — 製卡發卡流程（原 LOD / 母卡，已調整至卡片指令頁籤之後）
@@ -59,12 +61,8 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     m_makeMasterBtn->setStyleSheet(
         "QPushButton { background:#0288D1; color:white; padding:8px 16px; font-weight:bold; border-radius:4px; }"
         "QPushButton:disabled { background:#CCC; color:#666; }");
+    m_makeMasterBtn->setToolTip("一次完成：ISAM 寫入 Exchange Key → 母卡認證 → 寫入母卡資料（C8/C9/0001/0002）");
     m_makeMasterBtn->setEnabled(false);
-
-    m_authBtn = new QPushButton("🔐 母卡認證", tab);
-    m_authBtn->setStyleSheet(
-        "QPushButton { background:#6A1B9A; color:white; padding:8px 16px; font-weight:bold; border-radius:4px; }"
-        "QPushButton:disabled { background:#CCC; color:#666; }");
 
     m_convertBtn = new QPushButton("🔄 母卡轉換", tab);
     m_convertBtn->setStyleSheet(
@@ -86,7 +84,6 @@ void PageCardOperation::setupLodTab(QWidget* tab)
 
     btnRow->addWidget(m_loadBtn);
     btnRow->addWidget(m_clearBtn);
-    btnRow->addWidget(m_authBtn);
     btnRow->addWidget(m_makeMasterBtn);
     btnRow->addWidget(m_convertBtn);
     btnRow->addWidget(m_washCardBtn);
@@ -120,10 +117,42 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     mf(m_c3CodeEdit, "C3 Code：");
     mf(m_c1Edit, "C1 金鑰：");
     mf(m_c1CodeEdit, "C1 Code：");
-    mf(m_codeAEdit, "Code A：");
-    mf(m_codeBEdit, "Code B：");
-    mf(m_exchEdit, "Exchange Code：");
-    mf(m_ccodeEdit, "CCode：");
+
+    // 三段式欄位：K1 / K2 / K3，每段 16 碼（8 bytes）
+    auto mkSegRow = [&](QLineEdit* (&segs)[3], const QString& lbl) {
+        auto* row = new QWidget(tab);
+        auto* h = new QHBoxLayout(row);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(6);
+        for (int i = 0; i < 3; ++i) {
+            segs[i] = makeEditField(tab, false);
+            segs[i]->setMaximumHeight(28);
+            segs[i]->setFixedWidth(150);
+            segs[i]->setMaxLength(16);
+            segs[i]->setPlaceholderText(QString("K%1（16 碼）").arg(i + 1));
+            segs[i]->setValidator(new QRegularExpressionValidator(
+                QRegularExpression("[0-9A-Fa-f]*"), segs[i]));
+            h->addWidget(segs[i]);
+        }
+        h->addStretch();
+        dataForm->addRow(lbl, row);
+        };
+
+    // 檢查碼欄位：自動計算、唯讀
+    auto mkCheckRow = [&](QLineEdit*& f, const QString& lbl) {
+        f = makeEditField(tab, true);
+        f->setMaximumHeight(28);
+        f->setFixedWidth(80);
+        f->setPlaceholderText("自動計算");
+        dataForm->addRow(lbl, f);
+        };
+
+    mkSegRow(m_codeAEdit, "Code A：");
+    mkCheckRow(m_codeACheckEdit, "Code A 檢查碼：");
+    mkSegRow(m_codeBEdit, "Code B：");
+    mkCheckRow(m_codeBCheckEdit, "Code B 檢查碼：");
+    mkSegRow(m_exchEdit, "Exchange Code：");
+    mf(m_ccodeEdit, "CCode（Exchange 檢查碼）：");
     mf(m_pinAEdit, "Pin A：");
     mf(m_pinBEdit, "Pin B：");
     layout->addWidget(dataGrp);
@@ -133,7 +162,6 @@ void PageCardOperation::setupLodTab(QWidget* tab)
 
     connect(m_loadBtn, &QPushButton::clicked, this, &PageCardOperation::onLoadFile);
     connect(m_clearBtn, &QPushButton::clicked, this, &PageCardOperation::onClearFields);
-    connect(m_authBtn, &QPushButton::clicked, this, &PageCardOperation::onAuthenticate);
     connect(m_makeMasterBtn, &QPushButton::clicked, this, &PageCardOperation::onMakeMaster);
     connect(m_convertBtn, &QPushButton::clicked, this, &PageCardOperation::onConvertMaster);
     connect(m_washCardBtn, &QPushButton::clicked, this, &PageCardOperation::onWashCard);
@@ -143,6 +171,13 @@ void PageCardOperation::setupLodTab(QWidget* tab)
     // 也要能啟用「製作母卡」按鈕，不強制一定要先載入檔案。
     connect(m_c3Edit, &QLineEdit::textChanged, this, &PageCardOperation::onCustomerFieldChanged);
     connect(m_c1Edit, &QLineEdit::textChanged, this, &PageCardOperation::onCustomerFieldChanged);
+
+    // Code A / B / Exchange Code 的三段欄位：任一段改變就重算檢查碼
+    for (int i = 0; i < 3; ++i) {
+        connect(m_codeAEdit[i], &QLineEdit::textChanged, this, &PageCardOperation::onCodeABChanged);
+        connect(m_codeBEdit[i], &QLineEdit::textChanged, this, &PageCardOperation::onCodeABChanged);
+        connect(m_exchEdit[i], &QLineEdit::textChanged, this, &PageCardOperation::onExchangeChanged);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,49 +221,6 @@ void PageCardOperation::onCustomerFieldChanged()
     m_makeMasterBtn->setEnabled(hasData);
 }
 
-void PageCardOperation::onAuthenticate()
-{
-    if (!m_canMakeMaster) {
-        log("讀卡機數量不足 2 台，不提供母卡認證功能。", true);
-        return;
-    }
-
-    QString isamReaderName = m_masterIsamReaderCombo ? m_masterIsamReaderCombo->currentText() : QString();
-    QString cardReaderName = m_masterCardReaderCombo ? m_masterCardReaderCombo->currentText() : QString();
-    if (isamReaderName.isEmpty() || cardReaderName.isEmpty() || isamReaderName == cardReaderName) {
-        QMessageBox::warning(this, "設定錯誤", "請選擇兩台不同的讀卡機（ISAM／母卡）。");
-        return;
-    }
-
-    SCARDHANDLE hIsam = connectReader(isamReaderName);
-    SCARDHANDLE hMaster = connectReader(cardReaderName);
-    if (hIsam == 0 || hMaster == 0) {
-        QMessageBox::critical(this, "連線失敗", "無法連線所選讀卡機，請確認卡片已插好。");
-        return;
-    }
-
-    log("====== 🔐 母卡認證 ======");
-    MasterCardUpdater mc(hMaster, hIsam);
-    bool ok = mc.authenticate([this](const QString& msg, bool err) { log(msg, err); });
-
-    if (ok) {
-        m_authenticated = true;
-        m_authBtn->setStyleSheet(
-            "QPushButton { background:#2E7D32; color:white; padding:8px 16px; "
-            "font-weight:bold; border-radius:4px; }");
-        m_authBtn->setText("✔ 已認證");
-        QMessageBox::information(this, "認證成功", "🎉 母卡認證成功，可以進行寫入！");
-    }
-    else {
-        m_authenticated = false;
-        m_authBtn->setStyleSheet(
-            "QPushButton { background:#6A1B9A; color:white; padding:8px 16px; "
-            "font-weight:bold; border-radius:4px; }");
-        m_authBtn->setText("🔐 母卡認證");
-        QMessageBox::critical(this, "認證失敗", "母卡認證失敗，請查看日誌。");
-    }
-}
-
 void PageCardOperation::onMakeMaster()
 {
     if (!m_canMakeMaster) {
@@ -255,31 +247,18 @@ void PageCardOperation::onMakeMaster()
         QMessageBox::warning(this, "資料不足", "至少需要填入 C3 / C1 金鑰！");
         return;
     }
-
-    // 若尚未認證，先自動執行認證
-    if (!m_authenticated) {
-        log("⚠️ 尚未認證，自動執行認證...");
-        MasterCardUpdater mcAuth(hMaster, hIsam);
-        if (!mcAuth.authenticate([this](const QString& msg, bool err) { log(msg, err); })) {
-            QMessageBox::critical(this, "失敗", "母卡認證失敗，請先按「母卡認證」後再試。");
-            return;
-        }
-        m_authenticated = true;
+    if (d.exchangeCode.isEmpty() || d.ccode.isEmpty()) {
+        QMessageBox::warning(this, "資料不足", "請確認 Exchange Code 與 CCode 皆已填寫！\n（Code A、Code B 填好後會自動計算）");
+        return;
     }
 
+    // 一次完成：ISAM 寫入 Exchange Key → 母卡認證 → 寫入 C8/C9/0001/0002
     log("====== 開始製作母卡 ======");
     MasterCardUpdater mc(hMaster, hIsam);
-    bool ok = mc.writeData(d, d.pinA, d.pinB, [this](const QString& m, bool e) { log(m, e); });
+    bool ok = mc.makeMasterCard(d, [this](const QString& m, bool e) { log(m, e); });
 
-    // 寫入後重置認證狀態（每次寫入都需要重新認證）
-    m_authenticated = false;
-    m_authBtn->setText("🔐 母卡認證");
-    m_authBtn->setStyleSheet(
-        "QPushButton { background:#6A1B9A; color:white; padding:8px 16px; "
-        "font-weight:bold; border-radius:4px; }");
-
-    if (ok) QMessageBox::information(this, "完成", "🎉 母卡寫入完成！");
-    else    QMessageBox::critical(this, "失敗", "❌ 寫入失敗，請查看日誌。");
+    if (ok) QMessageBox::information(this, "完成", "🎉 母卡製作完成！");
+    else    QMessageBox::critical(this, "失敗", "❌ 製作母卡失敗，請查看日誌。");
 }
 
 void PageCardOperation::onConvertMaster()
@@ -388,8 +367,15 @@ void PageCardOperation::onIssueCard()
 void PageCardOperation::onClearFields()
 {
     for (auto* f : { m_nameEdit, m_c3Edit, m_c3CodeEdit, m_c1Edit, m_c1CodeEdit,
-                    m_codeAEdit, m_codeBEdit, m_exchEdit, m_ccodeEdit, m_pinAEdit, m_pinBEdit })
+                    m_ccodeEdit, m_pinAEdit, m_pinBEdit })
         f->clear();
+    for (int i = 0; i < 3; ++i) {
+        m_codeAEdit[i]->clear();
+        m_codeBEdit[i]->clear();
+        m_exchEdit[i]->clear();
+    }
+    m_codeACheckEdit->clear();
+    m_codeBCheckEdit->clear();
     m_loaded = false;
     m_fileLabel->setText("尚未載入 — 或直接手動輸入");
     m_fileLabel->setStyleSheet("color:#888; font-style:italic;");

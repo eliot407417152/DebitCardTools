@@ -60,6 +60,14 @@ public:
     // XOR 兩段等長 QByteArray
     static QByteArray xorBytes(const QByteArray& a, const QByteArray& b);
 
+    // XOR 兩段等長 HEX 字串，回傳 HEX；長度不同、為空或含非 HEX 字元時回傳空字串
+    static QString xorHex(const QString& hexA, const QString& hexB);
+
+    // 金鑰檢查碼：以 3DES-ECB（IV=0）加密 8 bytes 全 0，取輸出前 4 個 HEX 字元。
+    // hexKey 必須是 48 個 HEX 字元（K1+K2+K3，各 16 碼），否則回傳空字串。
+    // 用於 Code A / Code B 的檢查碼，以及 Exchange Code 的 CCode。
+    static QString calcKeyCheckCode(const QString& hexKey);
+
     // ── 格式轉換 ─────────────────────────────────────────────────────────────
     static QByteArray hexToBytes(const QString& hex);
     static QString    bytesToHex(const QByteArray& bytes);
