@@ -4,10 +4,13 @@
 #include <QString>
 #include <winscard.h>
 #include "CardUtils.h"   // LogFn
+#include "Hex.h"         // Bytes / toHex / fromHex
+#include "Logger.h"      // CardFlow 系列用的 Logger
 
 class QVBoxLayout;
 class ReaderManager;
 class ReaderBar;
+class QLineEdit;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FlowPageBase — 「製作母卡 / 母卡轉換 / 洗卡 / 發卡」各流程頁面的共同基底
@@ -42,6 +45,15 @@ protected:
     // 兩台必須不同；任何一台取不到會跳出提示並回傳 false。
     bool acquireHandles(ReaderBar* isamBar, ReaderBar* otherBar,
         const QString& otherRole, SCARDHANDLE& hIsam, SCARDHANDLE& hOther);
+
+    // 把 CardFlow 系列的 Logger 接到頁面日誌：每一行轉成 logMessage，
+    // 內容含 "!!!"（CardFlow::fail 的標記）的行以錯誤色顯示。
+    void bindLogger(Logger& lg);
+
+    // 讀取十六進位輸入欄並轉成 bytes。
+    //   expectedBytes >= 0：長度必須剛好等於該值；-1：不限長度（但不可為空）
+    // 格式或長度不對時跳出提示並回傳 false。
+    bool readHexInput(QLineEdit* edit, const QString& label, int expectedBytes, Bytes& out);
 
 private:
     ReaderManager* m_manager = nullptr;

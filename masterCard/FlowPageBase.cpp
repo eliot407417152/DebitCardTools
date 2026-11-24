@@ -4,6 +4,7 @@
 #include <QVBoxLayout>
 #include <QScrollArea>
 #include <QMessageBox>
+#include <QLineEdit>
 
 FlowPageBase::FlowPageBase(ReaderManager* manager, QWidget* parent)
     : QWidget(parent), m_manager(manager)
@@ -44,6 +45,31 @@ bool FlowPageBase::acquireHandles(ReaderBar* isamBar, ReaderBar* otherBar,
         QMessageBox::critical(this, "連線失敗",
             "無法連線所選讀卡機，請確認卡片已插好。\n"
             "（剛重插卡片的話，可按「重新整理」後再試一次）");
+        return false;
+    }
+    return true;
+}
+
+void FlowPageBase::bindLogger(Logger& lg)
+{
+    lg.onLine = [this](const std::string& line) {
+        log(QString::fromStdString(line), line.find("!!!") != std::string::npos);
+    };
+}
+
+bool FlowPageBase::readHexInput(QLineEdit* edit, const QString& label, int expectedBytes, Bytes& out)
+{
+    if (!fromHex(edit->text().toStdString(), out) || out.empty()) {
+        QMessageBox::warning(this, "資料格式錯誤",
+            QString("「%1」必須是十六進位字元（兩個字元為一個 byte），且不可空白。").arg(label));
+        edit->setFocus();
+        return false;
+    }
+    if (expectedBytes >= 0 && static_cast<int>(out.size()) != expectedBytes) {
+        QMessageBox::warning(this, "資料長度錯誤",
+            QString("「%1」必須是 %2 bytes（%3 個十六進位字元），目前是 %4 bytes。")
+                .arg(label).arg(expectedBytes).arg(expectedBytes * 2).arg(out.size()));
+        edit->setFocus();
         return false;
     }
     return true;

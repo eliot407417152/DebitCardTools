@@ -63,7 +63,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Link>
-      <AdditionalDependencies>winscard.lib;libcrypto.lib;libssl.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>WinScard.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -100,9 +100,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="CardIssuer.cpp" />
     <ClCompile Include="CardUtils.cpp" />
     <ClCompile Include="CardWasher.cpp" />
+    <ClCompile Include="CardFlow.cpp" />
+    <ClCompile Include="CardIssuing.cpp" />
+    <ClCompile Include="CardPersonal.cpp" />
+    <ClCompile Include="CardReader.cpp" />
+    <ClCompile Include="PersonalData.cpp" />
+    <ClCompile Include="PersonalDialogs.cpp" />
     <ClCompile Include="DataSetLoader.cpp" />
     <ClCompile Include="IsamKeyChecker.cpp" />
     <ClCompile Include="IsamKeyData.cpp" />
@@ -135,9 +140,18 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="CardIssuer.h" />
     <ClInclude Include="CardUtils.h" />
     <ClInclude Include="CardWasher.h" />
+    <ClInclude Include="CardFlow.h" />
+    <ClInclude Include="CardIssuing.h" />
+    <ClInclude Include="CardPersonal.h" />
+    <ClInclude Include="CardReader.h" />
+    <ClInclude Include="Hex.h" />
+    <ClInclude Include="SimpleDes.h" />
+    <ClInclude Include="Logger.h" />
+    <ClInclude Include="PersonalData.h" />
+    <ClInclude Include="PersonalDialogs.h" />
+    <ClInclude Include="UiScale.h" />
     <ClInclude Include="DataSetLoader.h" />
     <ClInclude Include="IsamKeyChecker.h" />
     <ClInclude Include="IsamKeyData.h" />

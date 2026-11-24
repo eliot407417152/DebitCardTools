@@ -58,10 +58,25 @@
     <ClCompile Include="CardWasher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="IsamKeyChecker.cpp">
+    <ClCompile Include="CardFlow.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="CardIssuer.cpp">
+    <ClCompile Include="CardIssuing.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CardPersonal.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CardReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PersonalData.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PersonalDialogs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IsamKeyChecker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PageCardOperation_IsamTab.cpp">
@@ -132,10 +147,37 @@
     <ClInclude Include="CardWasher.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="IsamKeyChecker.h">
+    <ClInclude Include="CardFlow.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CardIssuer.h">
+    <ClInclude Include="CardIssuing.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CardPersonal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CardReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Hex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SimpleDes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Logger.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PersonalData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PersonalDialogs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="UiScale.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IsamKeyChecker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">

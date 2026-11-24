@@ -47,22 +47,17 @@ QByteArray CardUtils::encrypt3DES(const QByteArray& key, const QByteArray& data)
     QByteArray k = key;
     if (k.size() < 24) k.append(24 - k.size(), '\0');
 
-    DES_cblock k1, k2, k3;
-    memcpy(&k1, k.constData(), 8);
-    memcpy(&k2, k.constData() + 8, 8);
-    memcpy(&k3, k.constData() + 16, 8);
-
-    DES_key_schedule ks1, ks2, ks3;
-    DES_set_key_unchecked(&k1, &ks1);
-    DES_set_key_unchecked(&k2, &ks2);
-    DES_set_key_unchecked(&k3, &ks3);
+    simpledes::KeySchedule ks1, ks2, ks3;
+    simpledes::setKey(reinterpret_cast<const uint8_t*>(k.constData()), ks1);
+    simpledes::setKey(reinterpret_cast<const uint8_t*>(k.constData()) + 8,  ks2);
+    simpledes::setKey(reinterpret_cast<const uint8_t*>(k.constData()) + 16, ks3);
 
     QByteArray result;
     for (int i = 0; i < data.size(); i += 8) {
-        DES_cblock in{}, out{};
+        uint8_t in[8] = {}, out[8] = {};
         int chunk = qMin(8, data.size() - i);
-        memcpy(&in, data.constData() + i, chunk);
-        DES_ecb3_encrypt(&in, &out, &ks1, &ks2, &ks3, DES_ENCRYPT);
+        memcpy(in, data.constData() + i, chunk);
+        simpledes::ecb3Encrypt(in, out, ks1, ks2, ks3);
         result.append(reinterpret_cast<const char*>(out), 8);
     }
     return result;
@@ -172,15 +167,12 @@ QString CardUtils::desSingleBlockHex(const QString& hexKey16, const QString& hex
     QByteArray dataBytes = hexToBytes(hexData16);
     if (keyBytes.size() < 8 || dataBytes.size() < 8) return {};
 
-    DES_cblock key{};
-    memcpy(&key, keyBytes.constData(), 8);
+    simpledes::KeySchedule ks;
+    simpledes::setKey(reinterpret_cast<const uint8_t*>(keyBytes.constData()), ks);
 
-    DES_key_schedule ks;
-    DES_set_key_unchecked(&key, &ks);
-
-    DES_cblock in{}, out{};
-    memcpy(&in, dataBytes.constData(), 8);
-    DES_ecb_encrypt(&in, &out, &ks, encrypt ? DES_ENCRYPT : DES_DECRYPT);
+    uint8_t in[8] = {}, out[8] = {};
+    memcpy(in, dataBytes.constData(), 8);
+    simpledes::ecb(in, out, ks, encrypt);
 
     return bytesToHex(QByteArray(reinterpret_cast<const char*>(out), 8));
 }

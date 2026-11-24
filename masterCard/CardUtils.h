@@ -1,15 +1,12 @@
 ﻿#pragma once
 
-#define _OSSL_DEPRECATED_ALLOW_
-#pragma warning(disable: 4996)
-
 #include <QString>
 #include <QByteArray>
 #include <QStringList>
 #include <QRandomGenerator>
 #include <functional>
 #include <winscard.h>
-#include <openssl/des.h>
+#include "SimpleDes.h"   // 內建 DES/3DES（不再依賴 OpenSSL）
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 客戶資料結構
