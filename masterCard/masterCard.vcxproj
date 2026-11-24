@@ -106,6 +106,7 @@
     <ClCompile Include="CardIssuing.cpp" />
     <ClCompile Include="CardPersonal.cpp" />
     <ClCompile Include="CardReader.cpp" />
+    <ClCompile Include="PageCardOperation_RawApduTab.cpp" />
     <ClCompile Include="PersonalData.cpp" />
     <ClCompile Include="PersonalDialogs.cpp" />
     <ClCompile Include="DataSetLoader.cpp" />

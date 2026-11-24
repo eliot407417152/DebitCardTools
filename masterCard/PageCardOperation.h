@@ -358,7 +358,7 @@ struct LogColors
 //     每個需要選讀卡機的地方都放一個 ReaderBar（下拉選單 + 連線 / 斷線 / 重新整理）。
 //     重插卡片後按「重新整理」即可重新讀取，不必重開程式。
 //   • 頁籤：
-//       🔑 ISAM 金鑰 / 🔧 ISAM 指令 / 📡 卡片指令 / 🔐 加密工具   （本檔 + PageCardOperation_*.cpp）
+//       🔑 ISAM 金鑰 / 🔧 ISAM 指令 / 📡 卡片指令 / 🔐 加密工具 / 🧪 Raw APDU   （本檔 + PageCardOperation_*.cpp）
 //       🔮 製作母卡 / 🔄 母卡轉換 / 🧼 洗卡 / 💳 發卡               （各自獨立的頁面類別，
 //         見 PageMakeMaster / PageConvertMaster / PageWashCard / PageIssueCard，
 //         之後調整任一流程只需要改對應的那一個頁面）
@@ -449,6 +449,7 @@ private:
     void setupIsamCmdTab(QWidget* tab);
     void setupApduTab(QWidget* tab);
     void setupCryptoTab(QWidget* tab);
+    void setupRawApduTab(QWidget* tab);
     QGroupBox* setupCreateFileGroup(QWidget* parent, QVBoxLayout* layout);
 
     QGroupBox* makeApduGroup(QWidget* parent,
@@ -533,7 +534,6 @@ private:
     TerminalAuthFields m_terminalAuthFields;   // Terminal Authentication（P1固定/Kq左移3位/Lc自動/Data=16bytes）
     SetSessionKeyCardFields m_setSessionKeyCardFields;
     UpdateRecordCipheredFields m_updateRecordCipheredFields;
-    RawApduFields m_rawApduFields;             // Raw APDU（全欄位自行輸入）
     UpdateRecordFields m_updateRecordFields;   // Update Record（00 D2 RecN 04 Lc Data）
     IsamSimpleFields m_readBinaryFields;   // Read Binary：CLA/INS/P1 固定，P2/Le 自行輸入
     IsamSimpleFields m_generateRandomCardFields;   // Generate Random Number：CLA/INS/P1/P2/Le 固定
@@ -560,6 +560,10 @@ private:
     // 「卡片指令」頁籤 Card Authentication 區塊裡的唯讀狀態顯示，
     // 讓使用者不用開啟管理視窗也能看到目前套用的 Key Set 內容
     QLabel* m_caKeySetStatusLbl = nullptr;
+
+    // ── Raw APDU Tab（獨立分類）────────────────────────────────────────────
+    RawApduFields m_rawApduFields;             // Raw APDU（全欄位自行輸入）
+    ReaderBar* m_rawApduReaderBar = nullptr;   // 本頁使用哪一台讀卡機
 
     // ── 加密工具 Tab ────────────────────────────────────────────────────────
     CryptoToolFields m_cryptoFields;

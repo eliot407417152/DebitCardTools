@@ -91,6 +91,7 @@ void PageCardOperation::setupUI()
     auto* isamTab = new QWidget();  setupIsamTab(isamTab);
     auto* isamCmdTab = new QWidget();  setupIsamCmdTab(isamCmdTab);
     auto* apduTab = new QWidget();  setupApduTab(apduTab);
+    auto* rawApduTab = new QWidget();  setupRawApduTab(rawApduTab);
     auto* cryptoTab = new QWidget();  setupCryptoTab(cryptoTab);
 
     // 製卡 / 發卡流程：每個流程各自獨立一個頁面（之後調整流程只改對應的頁面即可）
@@ -100,11 +101,12 @@ void PageCardOperation::setupUI()
     auto* issueCardPage = new PageIssueCard(m_readerMgr);
     for (FlowPageBase* page : std::initializer_list<FlowPageBase*>{
             makeMasterPage, convertMasterPage, washCardPage, issueCardPage })
-        connect(page, &FlowPageBase::logMessage, this, &PageCardOperation::log);
+            connect(page, &FlowPageBase::logMessage, this, &PageCardOperation::log);
 
     tabWidget->addTab(isamTab, "🔑 ISAM 金鑰");
     tabWidget->addTab(isamCmdTab, "🔧 ISAM 指令");
     tabWidget->addTab(apduTab, "📡 卡片指令");
+    tabWidget->addTab(rawApduTab, "🧪 Raw APDU");
     tabWidget->addTab(cryptoTab, "🔐 加密工具");
     tabWidget->addTab(makeMasterPage, "🔮 製作母卡");
     tabWidget->addTab(convertMasterPage, "🔄 母卡轉換");
