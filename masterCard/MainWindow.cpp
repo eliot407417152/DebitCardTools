@@ -1,5 +1,6 @@
 ﻿#include "MainWindow.h"
 #include "PageCardOperation.h"
+#include "ThemeManager.h"
 #include <QIcon>
 #include <QMenuBar>
 #include <QMenu>
@@ -22,6 +23,7 @@
 #include <QStyleFactory>
 #include <QPalette>
 #include <QHBoxLayout>
+#include <QActionGroup>
 #include <algorithm>
 
 namespace {
@@ -37,14 +39,26 @@ namespace {
     constexpr int kLogLineSpacingMin = 50;
     constexpr int kLogLineSpacingMax = 300;
 
-    // 讀 / 寫 config.ini 裡的日誌顏色（預設為亮色）
+    bool sameColors(const LogColors& a, const LogColors& b)
+    {
+        return a.background.compare(b.background, Qt::CaseInsensitive) == 0
+            && a.text.compare(b.text, Qt::CaseInsensitive) == 0
+            && a.error.compare(b.error, Qt::CaseInsensitive) == 0;
+    }
+
+    // 讀 config.ini 裡的日誌顏色。
+    //   沒存過，或存的就是「亮色 / 深色預設」→ 跟著目前的外觀模式（亮色介面用亮色日誌、深色介面用深色日誌）；
+    //   使用者自訂過的顏色則維持不變。
     LogColors loadLogColors(QSettings& st)
     {
-        const LogColors def = LogColors::lightPreset();
+        const LogColors themeDef = ThemeManager::instance().isDark()
+            ? LogColors::darkPreset() : LogColors::lightPreset();
         LogColors c;
-        c.background = st.value(QStringLiteral("Log/BgColor"), def.background).toString();
-        c.text = st.value(QStringLiteral("Log/TextColor"), def.text).toString();
-        c.error = st.value(QStringLiteral("Log/ErrorColor"), def.error).toString();
+        c.background = st.value(QStringLiteral("Log/BgColor"), themeDef.background).toString();
+        c.text = st.value(QStringLiteral("Log/TextColor"), themeDef.text).toString();
+        c.error = st.value(QStringLiteral("Log/ErrorColor"), themeDef.error).toString();
+        if (sameColors(c, LogColors::lightPreset()) || sameColors(c, LogColors::darkPreset()))
+            return themeDef;
         return c;
     }
     void saveLogColors(QSettings& st, const LogColors& c)
@@ -53,43 +67,16 @@ namespace {
         st.setValue(QStringLiteral("Log/TextColor"), c.text);
         st.setValue(QStringLiteral("Log/ErrorColor"), c.error);
     }
-
-    // 整個程式的亮色 / 系統預設外觀切換
-    //   亮色：Fusion 樣式 + 明亮調色盤（即使 Windows 開了深色模式，介面也維持亮色）
-    void applyAppTheme(bool forceLight)
-    {
-        static const QString originalStyle = QApplication::style()->objectName();
-        if (forceLight) {
-            QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
-            QPalette p;
-            p.setColor(QPalette::Window, QColor("#FFFFFF"));
-            p.setColor(QPalette::WindowText, QColor("#000000"));
-            p.setColor(QPalette::Base, QColor("#FFFFFF"));
-            p.setColor(QPalette::AlternateBase, QColor("#FFFFFF"));
-            p.setColor(QPalette::Text, QColor("#000000"));
-            p.setColor(QPalette::Button, QColor("#F0F0F0"));
-            p.setColor(QPalette::ButtonText, QColor("#000000"));
-            p.setColor(QPalette::ToolTipBase, QColor("#FFFFDC"));
-            p.setColor(QPalette::ToolTipText, QColor("#202020"));
-            p.setColor(QPalette::PlaceholderText, QColor("#8A8A8A"));
-            p.setColor(QPalette::Highlight, QColor("#0078D4"));
-            p.setColor(QPalette::HighlightedText, QColor("#FFFFFF"));
-            p.setColor(QPalette::Disabled, QPalette::Text, QColor("#9A9A9A"));
-            p.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#9A9A9A"));
-            QApplication::setPalette(p);
-        }
-        else {
-            if (QStyle* st = QStyleFactory::create(originalStyle))
-                QApplication::setStyle(st);
-            QApplication::setPalette(QPalette());
-        }
-    }
 }
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
     setWindowIcon(QIcon(":/masterCard/atm-card.ico"));
+
+    // 主題要在建立任何元件之前先裝好（調色盤 + stylesheet 攔截），之後建立的元件才會直接是正確的顏色
+    ThemeManager::instance().install();
+    ThemeManager::instance().setMode(ThemeManager::loadMode());
 
     buildMenuBar();
 
@@ -111,18 +98,29 @@ void MainWindow::buildMenuBar()
     QAction* logAppearanceAct = settingMenu->addAction(QStringLiteral("日誌顯示設定(&L)..."));
     connect(logAppearanceAct, &QAction::triggered, this, &MainWindow::onEditLogAppearance);
 
-    QAction* lightThemeAct = settingMenu->addAction(QStringLiteral("強制亮色介面(&T)"));
-    lightThemeAct->setCheckable(true);
-    {
-        QSettings st(QCoreApplication::applicationDirPath() + "/config.ini", QSettings::IniFormat);
-        lightThemeAct->setChecked(st.value(QStringLiteral("UI/ForceLight"), true).toBool());
-        applyAppTheme(lightThemeAct->isChecked());
+    // 外觀：亮色 / 深色 / 跟隨系統（切換時有淡入淡出動畫）
+    QMenu* themeMenu = settingMenu->addMenu(QStringLiteral("外觀(&T)"));
+    auto* themeGroup = new QActionGroup(this);
+    themeGroup->setExclusive(true);
+    struct ThemeItem { QString text; ThemeMode mode; };
+    const ThemeItem items[] = {
+        { QStringLiteral("☀ 亮色"), ThemeMode::Light },
+        { QStringLiteral("🌙 深色"), ThemeMode::Dark },
+        { QStringLiteral("🖥 跟隨系統"), ThemeMode::System },
+    };
+    for (const ThemeItem& it : items) {
+        QAction* act = themeMenu->addAction(it.text);
+        act->setCheckable(true);
+        act->setChecked(ThemeManager::instance().mode() == it.mode);
+        themeGroup->addAction(act);
+        const ThemeMode mode = it.mode;
+        connect(act, &QAction::triggered, this, [this, mode]() {
+            ThemeManager::saveMode(mode);
+            ThemeManager::instance().setMode(mode, this);
+            });
     }
-    connect(lightThemeAct, &QAction::toggled, this, [](bool on) {
-        QSettings st(QCoreApplication::applicationDirPath() + "/config.ini", QSettings::IniFormat);
-        st.setValue(QStringLiteral("UI/ForceLight"), on);
-        applyAppTheme(on);
-        });
+    // 外觀實際切換完成後（包含「跟隨系統」時作業系統自己切換），日誌的預設顏色也跟著換
+    ThemeManager::instance().setOnChanged([this](bool) { applyLogSettingsToOperationPage(); });
 
     settingMenu->addSeparator();
     QAction* keyDataSetAct = settingMenu->addAction(QStringLiteral("Key Set / Data Set 管理(&K)..."));
@@ -256,6 +254,7 @@ void MainWindow::onEditLogAppearance()
     auto refreshSwatches = [&colors, bgBtn, textBtn, errBtn]() {
         auto paint = [](QPushButton* b, const QString& hex) {
             b->setText(hex.toUpper());
+            ThemeManager::excludeFromTheme(b);
             // 文字用對比色，避免跟色塊同色看不到
             const QColor c(hex);
             const QString fg = c.lightness() > 128 ? "#000000" : "#FFFFFF";

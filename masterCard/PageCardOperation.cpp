@@ -8,6 +8,7 @@
 #include "PageConvertMaster.h"
 #include "PageWashCard.h"
 #include "PageIssueCard.h"
+#include "ThemeManager.h"
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTextEdit>
@@ -135,6 +136,7 @@ void PageCardOperation::setupUI()
 
     m_logEdit = new QTextEdit(this);
     m_logEdit->setReadOnly(true);
+    ThemeManager::excludeFromTheme(m_logEdit);   // 日誌顏色由「日誌顯示設定」決定，不跟著主題轉換
     m_logEdit->setStyleSheet(logStyleSheet());
     logLay->addWidget(m_logEdit);
     bodyRow->addWidget(logGrp, 2);

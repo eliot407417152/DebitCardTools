@@ -136,6 +136,7 @@
     <ClCompile Include="PageWashCard.cpp" />
     <ClCompile Include="ReaderBar.cpp" />
     <ClCompile Include="ReaderManager.cpp" />
+    <ClCompile Include="ThemeManager.cpp" />
     <QtRcc Include="masterCard.qrc" />
     <QtUic Include="masterCard.ui" />
     <ClCompile Include="main.cpp" />
@@ -152,6 +153,7 @@
     <ClInclude Include="Logger.h" />
     <ClInclude Include="PersonalData.h" />
     <ClInclude Include="PersonalDialogs.h" />
+    <ClInclude Include="ThemeManager.h" />
     <ClInclude Include="UiScale.h" />
     <ClInclude Include="DataSetLoader.h" />
     <ClInclude Include="IsamKeyChecker.h" />
