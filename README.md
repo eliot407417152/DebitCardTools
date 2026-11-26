@@ -93,6 +93,7 @@ CardIssuer.h/.cpp            「發卡」完整流程（洗卡步驟 + 00C2/00C4
 8. Set Session Key（Div-Data + R2，Lc = DL+8）
 9. Get Diversify Key with Session Key
 10. Get Working Key with Session Key
+11. Get Diversify Data（INS = 05，格式同 Get Diversify Key，Lc = DL）
 
 ### 卡片指令頁
 

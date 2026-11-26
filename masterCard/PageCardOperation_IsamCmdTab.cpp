@@ -451,6 +451,41 @@ void PageCardOperation::setupIsamCmdTab(QWidget* tab)
     addCmdPage(wkeyGrp, "⑩ Get Working Key with Session Key");
     connect(wkeyBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamGetWorkingKey);
 
+    // ── ⑪ Get Diversify Data ────────────────────────────────────────────────
+    auto* ddGrp = new QGroupBox("⑪ Get Diversify Data", content);
+    auto* ddLay = new QVBoxLayout(ddGrp);
+    auto* ddRow = new QHBoxLayout();
+    addCol(ddGrp, ddRow, m_diversifyDataFields.cla, "CLA", "82", 2, true);
+    addCol(ddGrp, ddRow, m_diversifyDataFields.ins, "INS", "05", 2, true);
+    addCol(ddGrp, ddRow, m_diversifyDataFields.p1, "P1（KID）", "", 2, false);
+    addCol(ddGrp, ddRow, m_diversifyDataFields.p2, "P2", "00", 2, true);
+    addCol(ddGrp, ddRow, m_diversifyDataFields.lcDisplay, "Lc（DL）", "", 2, true);
+    addCol(ddGrp, ddRow, m_diversifyDataFields.le, "Le", "00", 2, true);
+    ddRow->addStretch();
+    ddLay->addLayout(ddRow);
+
+    auto* ddDivLbl = new QLabel("Div-Data（多樣化資料，可變長度）：", ddGrp);
+    ddDivLbl->setStyleSheet("font-weight:bold; font-size:11px;");
+    m_diversifyDataFields.divData = makeEditField(ddGrp, false);
+    m_diversifyDataFields.divData->setPlaceholderText("輸入多樣化資料 HEX");
+    ddLay->addWidget(ddDivLbl);
+    ddLay->addWidget(m_diversifyDataFields.divData);
+
+    auto* ddHint = new QLabel("P1（KID）：自行輸入。Lc = DL（依 Div-Data 長度自動計算）。", ddGrp);
+    ddHint->setStyleSheet("color:#555; font-size:11px; padding:2px;");
+    ddLay->addWidget(ddHint);
+
+    connect(m_diversifyDataFields.divData, &QLineEdit::textChanged, this, &PageCardOperation::onUpdateDiversifyDataLc);
+
+    auto* ddBtn = new QPushButton("▶ 執行 Get Diversify Data", ddGrp);
+    ddBtn->setStyleSheet(
+        "QPushButton { background:#6A1B9A; color:white; padding:8px; "
+        "font-weight:bold; border-radius:4px; }");
+    ddLay->addWidget(ddBtn);
+    addCmdPage(ddGrp, "⑪ Get Diversify Data");
+    connect(ddBtn, &QPushButton::clicked, this, &PageCardOperation::onIsamGetDiversifyData);
+    onUpdateDiversifyDataLc();   // 初始化 Lc 顯示
+
     isamCmdList->setCurrentRow(0);
     scroll->setWidget(content);
 
@@ -730,6 +765,46 @@ void PageCardOperation::onIsamGetDiversifyKey()
     }
     else {
         log("⚠️ Get Diversify Key with Session Key SW=" + sw, true);
+    }
+}
+
+void PageCardOperation::onUpdateDiversifyDataLc()
+{
+    if (m_diversifyDataFields.lcDisplay) {
+        QString data = m_diversifyDataFields.divData
+            ? m_diversifyDataFields.divData->text().trimmed().remove(' ').toUpper()
+            : QString();
+        m_diversifyDataFields.lcDisplay->setText(
+            QString("%1").arg(data.length() / 2, 2, 16, QChar('0')).toUpper());
+    }
+}
+
+void PageCardOperation::onIsamGetDiversifyData()
+{
+    SCARDHANDLE hIsam = connectReader(m_isamCmdReaderCombo ? m_isamCmdReaderCombo->currentText() : QString());
+    if (hIsam == 0) { log("Error: 無效的 ISAM 卡片控制代碼", true); return; }
+
+    QString apdu = m_diversifyDataFields.buildApdu();
+    onUpdateDiversifyDataLc();
+    if (apdu.length() < 10) {
+        log("[Get Diversify Data] APDU 不完整，請確認欄位", true);
+        return;
+    }
+
+    log("====== Get Diversify Data ======");
+    bool ok = false;
+    QString resp = CardUtils::sendApdu(hIsam, apdu, ok,
+        [this](const QString& msg, bool err) { log(msg, err); });
+    if (!ok) { log("[Get Diversify Data] 通訊失敗", true); return; }
+
+    QString sw = resp.right(4);
+    QString data = resp.left(qMax(0, resp.length() - 4));
+    if (sw == "9000") {
+        log("✔ Get Diversify Data 成功 SW=9000");
+        log("Diversify Data: " + (data.isEmpty() ? QString("(空)") : data));
+    }
+    else {
+        log("⚠️ Get Diversify Data SW=" + sw, true);
     }
 }
 

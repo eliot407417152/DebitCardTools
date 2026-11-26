@@ -400,6 +400,8 @@ private slots:
     void onIsamSetSessionKey();
     void onUpdateDiversifyKeyLc();
     void onIsamGetDiversifyKey();
+    void onUpdateDiversifyDataLc();
+    void onIsamGetDiversifyData();
     void onIsamGetWorkingKey();
 
     // 卡片指令 Tab
@@ -522,6 +524,7 @@ private:
     StoreManufacturerKeyFields m_storeMfgKeyFields;
     SetSessionKeyIsamFields m_setSessionKeyIsamFields;
     DiversifyKeyFields m_diversifyKeyFields;
+    DiversifyKeyFields m_diversifyDataFields;   // Get Diversify Data（結構同 Get Diversify Key，INS=05）
     IsamSimpleFields m_workingKeyFields;
 
     // ── 卡片指令 Tab ────────────────────────────────────────────────────────
